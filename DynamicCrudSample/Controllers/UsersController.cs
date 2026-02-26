@@ -1,3 +1,4 @@
+using System.Data;
 using DynamicCrudSample.Models.Auth;
 using DynamicCrudSample.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
@@ -8,13 +9,17 @@ namespace DynamicCrudSample.Controllers;
 [Authorize(Policy = "AdminOnly")]
 public class UsersController : Controller
 {
+    private readonly IDbConnection _db;
     private readonly IUserAuthService _users;
     private readonly IAuditLogService _audit;
+    private readonly ILogger<UsersController> _logger;
 
-    public UsersController(IUserAuthService users, IAuditLogService audit)
+    public UsersController(IDbConnection db, IUserAuthService users, IAuditLogService audit, ILogger<UsersController> logger)
     {
+        _db = db;
         _users = users;
         _audit = audit;
+        _logger = logger;
     }
 
     public async Task<IActionResult> Index()
@@ -39,8 +44,11 @@ public class UsersController : Controller
 
         try
         {
-            await _users.CreateAsync(model);
-            await _audit.WriteAsync("user_create", "AppUser", $"Created user {model.UserName}", User.Identity?.Name);
+            await ExecuteUserTransactionAsync(async tx =>
+            {
+                await _users.CreateAsync(model, _db, tx);
+                await _audit.WriteAsync("user_create", "AppUser", $"Created user {model.UserName}", User.Identity?.Name, _db, tx);
+            });
             return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
@@ -80,14 +88,38 @@ public class UsersController : Controller
 
         try
         {
-            await _users.UpdateAsync(model);
-            await _audit.WriteAsync("user_update", "AppUser", $"Updated user {model.UserName}", User.Identity?.Name);
+            await ExecuteUserTransactionAsync(async tx =>
+            {
+                await _users.UpdateAsync(model, _db, tx);
+                await _audit.WriteAsync("user_update", "AppUser", $"Updated user {model.UserName}", User.Identity?.Name, _db, tx);
+            });
             return RedirectToAction(nameof(Index));
         }
         catch (Exception ex)
         {
             ModelState.AddModelError(string.Empty, ex.Message);
             return View(model);
+        }
+    }
+
+    private async Task ExecuteUserTransactionAsync(Func<IDbTransaction, Task> action)
+    {
+        if (_db.State != ConnectionState.Open)
+        {
+            _db.Open();
+        }
+
+        using var tx = _db.BeginTransaction();
+        try
+        {
+            await action(tx);
+            tx.Commit();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "User transaction failed");
+            tx.Rollback();
+            throw;
         }
     }
 }

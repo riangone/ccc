@@ -1,3 +1,4 @@
+using System.Data;
 using Dapper;
 using DynamicCrudSample.Models.Auth;
 using Microsoft.AspNetCore.Identity;
@@ -54,61 +55,74 @@ public class UserAuthService : IUserAuthService
         return await conn.QueryFirstOrDefaultAsync<AppUser>("SELECT * FROM AppUser WHERE Id = @Id", new { Id = id });
     }
 
-    public async Task<int> CreateAsync(UserEditViewModel input)
+    public async Task<int> CreateAsync(UserEditViewModel input, IDbConnection? connection = null, IDbTransaction? transaction = null)
     {
-        await using var conn = OpenConnection();
-
-        var existing = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM AppUser WHERE UserName = @UserName", new { input.UserName });
-        if (existing > 0)
+        var ownConnection = connection == null;
+        var conn = connection ?? OpenConnection();
+        try
         {
-            throw new InvalidOperationException($"User '{input.UserName}' already exists.");
-        }
+            var existing = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM AppUser WHERE UserName = @UserName", new { input.UserName }, transaction);
+            if (existing > 0)
+            {
+                throw new InvalidOperationException($"User '{input.UserName}' already exists.");
+            }
 
-        var user = new AppUser
-        {
-            UserName = input.UserName,
-            DisplayName = input.DisplayName,
-            PreferredLanguage = input.PreferredLanguage,
-            IsAdmin = input.IsAdmin,
-            IsActive = input.IsActive,
-            CreatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-        };
+            var user = new AppUser
+            {
+                UserName = input.UserName,
+                DisplayName = input.DisplayName,
+                PreferredLanguage = input.PreferredLanguage,
+                IsAdmin = input.IsAdmin,
+                IsActive = input.IsActive,
+                CreatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            };
 
-        var password = string.IsNullOrWhiteSpace(input.Password) ? "ChangeMe123!" : input.Password;
-        user.PasswordHash = _passwordHasher.HashPassword(user, password);
+            var password = string.IsNullOrWhiteSpace(input.Password) ? "ChangeMe123!" : input.Password;
+            user.PasswordHash = _passwordHasher.HashPassword(user, password);
 
-        var sql = @"
+            var sql = @"
 INSERT INTO AppUser (UserName, PasswordHash, DisplayName, PreferredLanguage, IsAdmin, IsActive, CreatedAt)
 VALUES (@UserName, @PasswordHash, @DisplayName, @PreferredLanguage, @IsAdmin, @IsActive, @CreatedAt);
 SELECT last_insert_rowid();";
 
-        var id = await conn.ExecuteScalarAsync<long>(sql, user);
-        _logger.LogInformation("Created user '{UserName}' with id {UserId}", user.UserName, id);
-        return (int)id;
+            var id = await conn.ExecuteScalarAsync<long>(sql, user, transaction);
+            _logger.LogInformation("Created user '{UserName}' with id {UserId}", user.UserName, id);
+            return (int)id;
+        }
+        finally
+        {
+            if (ownConnection && conn is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
-    public async Task UpdateAsync(UserEditViewModel input)
+    public async Task UpdateAsync(UserEditViewModel input, IDbConnection? connection = null, IDbTransaction? transaction = null)
     {
         if (!input.Id.HasValue)
         {
             throw new InvalidOperationException("User id is required for update.");
         }
 
-        await using var conn = OpenConnection();
-        var current = await conn.QueryFirstOrDefaultAsync<AppUser>("SELECT * FROM AppUser WHERE Id = @Id", new { Id = input.Id.Value });
-        if (current == null)
+        var ownConnection = connection == null;
+        var conn = connection ?? OpenConnection();
+        try
         {
-            throw new InvalidOperationException("User not found.");
-        }
+            var current = await conn.QueryFirstOrDefaultAsync<AppUser>("SELECT * FROM AppUser WHERE Id = @Id", new { Id = input.Id.Value }, transaction);
+            if (current == null)
+            {
+                throw new InvalidOperationException("User not found.");
+            }
 
-        var passwordHash = current.PasswordHash;
-        if (!string.IsNullOrWhiteSpace(input.Password))
-        {
-            current.UserName = input.UserName;
-            passwordHash = _passwordHasher.HashPassword(current, input.Password);
-        }
+            var passwordHash = current.PasswordHash;
+            if (!string.IsNullOrWhiteSpace(input.Password))
+            {
+                current.UserName = input.UserName;
+                passwordHash = _passwordHasher.HashPassword(current, input.Password);
+            }
 
-        await conn.ExecuteAsync(@"
+            await conn.ExecuteAsync(@"
 UPDATE AppUser
 SET UserName = @UserName,
     PasswordHash = @PasswordHash,
@@ -125,9 +139,17 @@ WHERE Id = @Id", new
             input.PreferredLanguage,
             input.IsAdmin,
             input.IsActive
-        });
+            }, transaction);
 
-        _logger.LogInformation("Updated user {UserId} ('{UserName}')", input.Id.Value, input.UserName);
+            _logger.LogInformation("Updated user {UserId} ('{UserName}')", input.Id.Value, input.UserName);
+        }
+        finally
+        {
+            if (ownConnection && conn is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 
     private SqliteConnection OpenConnection()

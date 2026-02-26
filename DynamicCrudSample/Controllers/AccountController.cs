@@ -62,7 +62,7 @@ public class AccountController : Controller
             CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(user.PreferredLanguage)));
 
         _logger.LogInformation("User '{UserName}' signed in", user.UserName);
-        await _audit.WriteAsync("login", "account", "Sign in", user.UserName);
+        await TryWriteAuditAsync("login", "account", "Sign in", user.UserName);
 
         if (!string.IsNullOrWhiteSpace(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
         {
@@ -79,7 +79,7 @@ public class AccountController : Controller
         var userName = User.Identity?.Name ?? "anonymous";
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         _logger.LogInformation("User '{UserName}' signed out", userName);
-        await _audit.WriteAsync("logout", "account", "Sign out", userName);
+        await TryWriteAuditAsync("logout", "account", "Sign out", userName);
         return RedirectToAction(nameof(Login));
     }
 
@@ -88,5 +88,17 @@ public class AccountController : Controller
     public IActionResult AccessDenied()
     {
         return View();
+    }
+
+    private async Task TryWriteAuditAsync(string action, string? entity, string? detail, string? userName)
+    {
+        try
+        {
+            await _audit.WriteAsync(action, entity, detail, userName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Audit write failed for action={Action}, user={UserName}", action, userName);
+        }
     }
 }

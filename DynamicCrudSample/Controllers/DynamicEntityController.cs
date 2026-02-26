@@ -1,3 +1,4 @@
+using System.Data;
 using DynamicCrudSample.Models;
 using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
@@ -9,21 +10,27 @@ namespace DynamicCrudSample.Controllers;
  [Authorize]
 public class DynamicEntityController : Controller
 {
+    private readonly IDbConnection _db;
     private readonly IDynamicCrudRepository _repo;
     private readonly IEntityMetadataProvider _meta;
     private readonly IValueConverter _converter;
     private readonly IAuditLogService _audit;
+    private readonly ILogger<DynamicEntityController> _logger;
 
     public DynamicEntityController(
+        IDbConnection db,
         IDynamicCrudRepository repo,
         IEntityMetadataProvider meta,
         IValueConverter converter,
-        IAuditLogService audit)
+        IAuditLogService audit,
+        ILogger<DynamicEntityController> logger)
     {
+        _db = db;
         _repo = repo;
         _meta = meta;
         _converter = converter;
         _audit = audit;
+        _logger = logger;
     }
 
     public async Task<IActionResult> Index(
@@ -107,8 +114,11 @@ public class DynamicEntityController : Controller
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
-        await _repo.InsertAsync(entity, values);
-        await _audit.WriteAsync("create", entity, $"Created {entity}", User.Identity?.Name);
+        await ExecuteCrudTransactionAsync(async tx =>
+        {
+            await _repo.InsertAsync(entity, values, tx);
+            await _audit.WriteAsync("create", entity, $"Created {entity}", User.Identity?.Name, _db, tx);
+        });
         if (isPageMode)
         {
             return RedirectToAction(nameof(Index), new { entity });
@@ -152,8 +162,11 @@ public class DynamicEntityController : Controller
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
-        await _repo.UpdateAsync(entity, id, values);
-        await _audit.WriteAsync("update", entity, $"Updated {entity} id={id}", User.Identity?.Name);
+        await ExecuteCrudTransactionAsync(async tx =>
+        {
+            await _repo.UpdateAsync(entity, id, values, tx);
+            await _audit.WriteAsync("update", entity, $"Updated {entity} id={id}", User.Identity?.Name, _db, tx);
+        });
         if (isPageMode)
         {
             return RedirectToAction(nameof(Index), new { entity });
@@ -170,8 +183,11 @@ public class DynamicEntityController : Controller
     public async Task<IActionResult> Delete(string entity, int id)
     {
         var meta = _meta.Get(entity);
-        await _repo.DeleteAsync(entity, id);
-        await _audit.WriteAsync("delete", entity, $"Deleted {entity} id={id}", User.Identity?.Name);
+        await ExecuteCrudTransactionAsync(async tx =>
+        {
+            await _repo.DeleteAsync(entity, id, tx);
+            await _audit.WriteAsync("delete", entity, $"Deleted {entity} id={id}", User.Identity?.Name, _db, tx);
+        });
         var total = await _repo.CountAsync(entity, null);
         var items = await _repo.GetAllAsync(entity, null, null, null);
         return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total));
@@ -271,6 +287,27 @@ public class DynamicEntityController : Controller
         }
 
         return filters;
+    }
+
+    private async Task ExecuteCrudTransactionAsync(Func<IDbTransaction, Task> action)
+    {
+        if (_db.State != ConnectionState.Open)
+        {
+            _db.Open();
+        }
+
+        using var tx = _db.BeginTransaction();
+        try
+        {
+            await action(tx);
+            tx.Commit();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CRUD transaction failed");
+            tx.Rollback();
+            throw;
+        }
     }
 }
 

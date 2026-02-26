@@ -202,6 +202,68 @@
    - `logs/app-YYYYMMDD.log`
    - `AuditLog` テーブル記録
 
+## 13. 追加改善履歴（最新）
+### 13.1 ページネーションリンク数の最適化
+1. ページ番号リンクを最大5件表示へ変更。
+2. 現在ページ中心のウィンドウ表示に変更。
+
+対象:
+- `Views/DynamicEntity/_List.cshtml`
+
+### 13.2 レイアウト再設計（左オーバーレイメニュー）
+1. ヘッダーを簡素化。
+2. ページ一覧を左サイドの開閉メニューへ移動。
+3. メニューはオーバーレイ方式で、本文幅に影響しない設計へ変更。
+4. 開閉操作:
+   - ヘッダーのハンバーガーで開く
+   - メニュー内の閉じるボタンで閉じる
+   - オーバーレイクリックで閉じる
+
+対象:
+- `Views/Shared/_Layout.cshtml`
+
+### 13.3 右側ナビUI調整（DaisyUI参考）
+1. 右側を「ドロップダウン中心」構成へ再設計。
+2. 検索入力は削除。
+3. 言語切替をテキストではなくアイコン（国旗）ボタンへ変更。
+
+対象:
+- `Views/Shared/_Layout.cshtml`
+
+### 13.4 CRUDコア改善（安全性・共通化・整合性）
+1. SQL安全化:
+   - メタデータ検証（table/key/column/join/expression/filter）を追加。
+   - 危険トークンを拒否。
+   - 識別子・式を許可制に制限。
+2. クエリ構築共通化:
+   - `GetAllAsync` / `CountAsync` の重複ロジックを統合。
+   - `BuildFromClause` / `BuildWhere` / `AppendWhere` を追加。
+3. 取引整合性:
+   - CRUD + Audit を同一トランザクションで実行。
+   - `Insert/Update/Delete` に `IDbTransaction` 対応追加。
+
+対象:
+- `Services/DynamicCrudRepository.cs`
+- `Controllers/DynamicEntityController.cs`
+- `Services/Auth/IAuditLogService.cs`
+- `Services/Auth/AuditLogService.cs`
+
+### 13.5 Users管理のトランザクション化
+1. `UsersController` の Create/Edit で User更新とAudit記録を同一トランザクション化。
+2. `IUserAuthService` と `UserAuthService` を接続/トランザクション受け取り対応に拡張。
+
+対象:
+- `Controllers/UsersController.cs`
+- `Services/Auth/IUserAuthService.cs`
+- `Services/Auth/UserAuthService.cs`
+
+### 13.6 認証可用性改善
+1. `AccountController` で監査ログ書き込み失敗がログイン/ログアウト成功を阻害しないよう修正。
+2. 監査失敗時は警告ログのみ記録して処理継続。
+
+対象:
+- `Controllers/AccountController.cs`
+
 ## 12. YAML定義テンプレート
 ```yaml
 entities:
@@ -254,4 +316,3 @@ entities:
           ja-JP: 項目1
         options: [A, B, C]
 ```
-
