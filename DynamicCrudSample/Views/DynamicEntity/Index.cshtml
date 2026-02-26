@@ -34,6 +34,7 @@
                   hx-target="#list-container"
                   hx-swap="innerHTML">
                 <input type="hidden" name="entity" value="@Model.Entity" />
+                <input type="hidden" name="count" value="@(Model.CountEnabled ? "true" : "false")" />
 
                 <label class="input input-bordered md:col-span-2">
                     <span class="label">Search</span>
@@ -67,7 +68,7 @@
     </dialog>
 
     <div id="list-container"
-         hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = Model.Sort, dir = Model.Dir })"
+         hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = Model.Sort, dir = Model.Dir, count = Model.CountEnabled ? "true" : "false", cursor = Model.Cursor })"
          hx-trigger="load"
          hx-target="#list-container"
          hx-swap="innerHTML"></div>

@@ -38,15 +38,22 @@ public class DynamicEntityController : Controller
         string? search = null,
         string? sort = null,
         string? dir = null,
-        int? pageSize = null)
+        int? pageSize = null,
+        string? count = null,
+        string? cursor = null)
     {
         var meta = _meta.Get(entity);
         pageSize ??= meta.Paging.PageSize;
+        var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
+        var includeCount = ResolveCountEnabled(meta, count);
 
         var filters = BuildFilters(meta);
 
-        var total = await _repo.CountAsync(entity, search, filters);
-        var items = await _repo.GetAllAsync(entity, search, sort, dir, filters, 1, pageSize);
+        var itemsRaw = await _repo.GetAllAsync(
+            entity, search, sort, dir, filters, 1, pageSize,
+            cursor: cursor, keyset: isKeyset, fetchOneExtra: isKeyset || !includeCount);
+        var (items, hasMore, nextCursor) = BuildPagedItems(meta, itemsRaw, pageSize.Value, isKeyset || !includeCount);
+        var total = includeCount ? await _repo.CountAsync(entity, search, filters) : -1;
         var fkData = await LoadForeignKeyDataFilter(meta);
         var page = 1;
 
@@ -62,7 +69,11 @@ public class DynamicEntityController : Controller
                 page,
                 total,
                 filters,
-                pageSize.Value));
+                pageSize.Value,
+                includeCount,
+                hasMore,
+                nextCursor,
+                cursor));
     }
 
     public async Task<IActionResult> ListPartial(
@@ -71,19 +82,28 @@ public class DynamicEntityController : Controller
         string? sort = null,
         string? dir = null,
         int page = 1,
-        int? pageSize = null)
+        int? pageSize = null,
+        string? count = null,
+        string? cursor = null)
     {
         var meta = _meta.Get(entity);
         pageSize ??= meta.Paging.PageSize;
+        var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
+        var includeCount = ResolveCountEnabled(meta, count);
 
         var filters = BuildFilters(meta);
 
-        var total = await _repo.CountAsync(entity, search, filters);
-        var items = await _repo.GetAllAsync(entity, search, sort, dir, filters, page, pageSize);
+        var itemsRaw = await _repo.GetAllAsync(
+            entity, search, sort, dir, filters, page, pageSize,
+            cursor: cursor, keyset: isKeyset, fetchOneExtra: isKeyset || !includeCount);
+        var (items, hasMore, nextCursor) = BuildPagedItems(meta, itemsRaw, pageSize.Value, isKeyset || !includeCount);
+        var total = includeCount ? await _repo.CountAsync(entity, search, filters) : -1;
         var fkData = await LoadForeignKeyDataForm(meta);
 
         return PartialView("_List",
-            new DynamicListViewModel(entity, meta, items, search, sort, dir, fkData, page, total, filters, pageSize.Value));
+            new DynamicListViewModel(
+                entity, meta, items, search, sort, dir, fkData, page, total, filters, pageSize.Value,
+                includeCount, hasMore, nextCursor, cursor));
     }
 
     public async Task<IActionResult> CreateForm(string entity = "customer", string mode = "modal")
@@ -128,7 +148,7 @@ public class DynamicEntityController : Controller
         var items = await _repo.GetAllAsync(entity, null, null, null);
         Response.Headers["HX-Retarget"] = "#list-container";
         Response.Headers["HX-Trigger"] = "entity-form-saved";
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total));
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
     }
 
     public async Task<IActionResult> EditForm(string entity, int id, string mode = "modal")
@@ -176,7 +196,7 @@ public class DynamicEntityController : Controller
         var items = await _repo.GetAllAsync(entity, null, null, null);
         Response.Headers["HX-Retarget"] = "#list-container";
         Response.Headers["HX-Trigger"] = "entity-form-saved";
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total));
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
     }
 
     [HttpPost]
@@ -190,7 +210,7 @@ public class DynamicEntityController : Controller
         });
         var total = await _repo.CountAsync(entity, null);
         var items = await _repo.GetAllAsync(entity, null, null, null);
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total));
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
     }
 
     private (Dictionary<string, object?> values, Dictionary<string, string> errors)
@@ -309,6 +329,43 @@ public class DynamicEntityController : Controller
             throw;
         }
     }
+
+    private static bool ResolveCountEnabled(EntityDefinition meta, string? count)
+    {
+        if (string.IsNullOrWhiteSpace(count))
+        {
+            return meta.Paging.EnableCount;
+        }
+
+        return !count.Equals("false", StringComparison.OrdinalIgnoreCase)
+            && !count.Equals("0", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static (List<dynamic> Items, bool HasMore, string? NextCursor) BuildPagedItems(
+        EntityDefinition meta,
+        IEnumerable<dynamic> rawItems,
+        int pageSize,
+        bool expectExtraRow)
+    {
+        var list = rawItems.ToList();
+        var hasMore = expectExtraRow && list.Count > pageSize;
+        if (hasMore)
+        {
+            list = list.Take(pageSize).ToList();
+        }
+
+        string? nextCursor = null;
+        if (hasMore && list.Count > 0)
+        {
+            var last = list.Last() as IDictionary<string, object>;
+            if (last != null && last.TryGetValue(meta.Key, out var keyVal))
+            {
+                nextCursor = keyVal?.ToString();
+            }
+        }
+
+        return (list, hasMore, nextCursor);
+    }
 }
 
 public record DynamicListViewModel(
@@ -322,7 +379,11 @@ public record DynamicListViewModel(
     int Page,
     int Total,
     Dictionary<string, string?>? Filters = null,
-    int PageSize = 5);
+    int PageSize = 5,
+    bool CountEnabled = true,
+    bool HasMore = false,
+    string? NextCursor = null,
+    string? Cursor = null);
 
 public record DynamicFormViewModel(
     string Entity,

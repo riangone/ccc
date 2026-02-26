@@ -8,7 +8,7 @@
         <div class="flex items-center gap-2">
             <span class="text-sm">Page Size:</span>
             <select class="select select-bordered select-sm w-24"
-                    hx-get="@Url.Action("ListPartial")"
+                    hx-get="@Url.Action("ListPartial", new { cursor = (string?)null })"
                     hx-include="#filter-form"
                     hx-target="#list-container"
                     hx-swap="innerHTML"
@@ -22,6 +22,8 @@
             <input type="hidden" name="search" value="@Model.Search" />
             <input type="hidden" name="sort" value="@Model.Sort" />
             <input type="hidden" name="dir" value="@Model.Dir" />
+            <input type="hidden" name="count" value="@(Model.CountEnabled ? "true" : "false")" />
+            <input type="hidden" name="cursor" value="@Model.Cursor" />
         </div>
 
         <div class="overflow-x-auto">
@@ -42,7 +44,7 @@
                                 var nextDir = (Model.Sort == name && Model.Dir != "desc") ? "desc" : "asc";
                                 <th>
                                     <a class="link link-hover"
-                                       hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = name, dir = nextDir })"
+                                       hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = name, dir = nextDir, count = Model.CountEnabled ? "true" : "false", cursor = (string?)null })"
                                        hx-include="#filter-form"
                                        hx-target="#list-container"
                                        hx-swap="innerHTML">
@@ -108,7 +110,7 @@
         </div>
 
         @{
-            var totalPages = (int)Math.Ceiling(Model.Total / (double)Model.PageSize);
+            var totalPages = Model.CountEnabled ? (int)Math.Ceiling(Model.Total / (double)Model.PageSize) : 0;
             var current = Model.Page;
             var maxPageLinks = 5;
             var half = maxPageLinks / 2;
@@ -119,37 +121,62 @@
                 startPage = Math.Max(1, endPage - maxPageLinks + 1);
             }
         }
-        @if (Model.Meta.Paging.Mode == "numbered" && totalPages > 1)
+        @if (Model.Meta.Paging.Mode == "keyset")
+        {
+            <div class="join">
+                <a class="join-item btn btn-sm @(string.IsNullOrWhiteSpace(Model.NextCursor) ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = Model.CountEnabled ? "true" : "false", cursor = Model.NextCursor })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Next</a>
+            </div>
+        }
+        else if (Model.Meta.Paging.Mode == "numbered" && Model.CountEnabled && totalPages > 1)
         {
             <div class="join">
                 <a class="join-item btn btn-sm @(current == 1 ? "btn-disabled" : "")"
-                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "true", cursor = (string?)null })"
                    hx-include="#filter-form"
                    hx-target="#list-container"
                    hx-swap="innerHTML">First</a>
                 <a class="join-item btn btn-sm @(current == 1 ? "btn-disabled" : "")"
-                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current - 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current - 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "true", cursor = (string?)null })"
                    hx-include="#filter-form"
                    hx-target="#list-container"
                    hx-swap="innerHTML">Prev</a>
                 @for (int i = startPage; i <= endPage; i++)
                 {
                     <a class="join-item btn btn-sm @(i == current ? "btn-primary" : "")"
-                       hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = i, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                       hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = i, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "true", cursor = (string?)null })"
                        hx-include="#filter-form"
                        hx-target="#list-container"
                        hx-swap="innerHTML">@i</a>
                 }
                 <a class="join-item btn btn-sm @(current == totalPages ? "btn-disabled" : "")"
-                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current + 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current + 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "true", cursor = (string?)null })"
                    hx-include="#filter-form"
                    hx-target="#list-container"
                    hx-swap="innerHTML">Next</a>
                 <a class="join-item btn btn-sm @(current == totalPages ? "btn-disabled" : "")"
-                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = totalPages, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = totalPages, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "true", cursor = (string?)null })"
                    hx-include="#filter-form"
                    hx-target="#list-container"
                    hx-swap="innerHTML">Last</a>
+            </div>
+        }
+        else if (Model.Meta.Paging.Mode == "numbered" && !Model.CountEnabled)
+        {
+            <div class="join">
+                <a class="join-item btn btn-sm @(current <= 1 ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = Math.Max(1, current - 1), search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "false", cursor = (string?)null })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Prev</a>
+                <a class="join-item btn btn-sm @(Model.HasMore ? "" : "btn-disabled")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current + 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize, count = "false", cursor = (string?)null })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Next</a>
             </div>
         }
     </div>

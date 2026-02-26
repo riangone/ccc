@@ -8,7 +8,7 @@ entities:
       zh-CN: 发票
       ja-JP: 請求書
     softDelete: false
-    paging: { pageSize: 10, mode: numbered }
+    paging: { pageSize: 10, mode: numbered, enableCount: false }
     layout:
       forms:
         columns: 2

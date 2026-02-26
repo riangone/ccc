@@ -8,7 +8,7 @@ entities:
       zh-CN: 曲目
       ja-JP: トラック
     softDelete: false
-    paging: { pageSize: 10, mode: numbered }
+    paging: { pageSize: 10, mode: keyset, enableCount: false }
     layout:
       forms: { columns: 2, order: [Name, AlbumId, GenreId, UnitPrice, Milliseconds] }
       filters: { columns: 3, order: [GenreId, UnitPrice] }

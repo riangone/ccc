@@ -89,6 +89,7 @@ public class PagingDefinition
 {
     public int PageSize { get; set; } = 5;
     public string Mode { get; set; } = "numbered";
+    public bool EnableCount { get; set; } = true;
 }
 
 public class FilterDefinition

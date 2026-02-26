@@ -3,6 +3,10 @@
 ## 2026-02-27
 
 ### Added
+1. Optional `count=false` query mode for large datasets to skip `COUNT(*)`.
+2. Keyset pagination support via cursor for high-volume list views.
+
+### Added
 1. Enforced push workflow note: update modification records before every push.
 
 ### Changed

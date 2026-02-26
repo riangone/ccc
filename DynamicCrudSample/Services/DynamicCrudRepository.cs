@@ -9,7 +9,17 @@ namespace DynamicCrudSample.Services;
 
 public interface IDynamicCrudRepository
 {
-    Task<IEnumerable<dynamic>> GetAllAsync(string entity, string? search, string? sort, string? dir, Dictionary<string, string?>? filters = null, int page = 1, int? pageSize = null);
+    Task<IEnumerable<dynamic>> GetAllAsync(
+        string entity,
+        string? search,
+        string? sort,
+        string? dir,
+        Dictionary<string, string?>? filters = null,
+        int page = 1,
+        int? pageSize = null,
+        string? cursor = null,
+        bool keyset = false,
+        bool fetchOneExtra = false);
     Task<dynamic?> GetByIdAsync(string entity, object id);
     Task<int> InsertAsync(string entity, IDictionary<string, object?> values, IDbTransaction? tx = null);
     Task<int> UpdateAsync(string entity, object id, IDictionary<string, object?> values, IDbTransaction? tx = null);
@@ -41,7 +51,10 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         string? dir,
         Dictionary<string, string?>? filters = null,
         int page = 1,
-        int? pageSize = null)
+        int? pageSize = null,
+        string? cursor = null,
+        bool keyset = false,
+        bool fetchOneExtra = false)
     {
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
@@ -57,20 +70,38 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         var param = new DynamicParameters();
         var where = BuildWhere(meta, search, filters, param);
 
-        AppendWhere(sql, where);
-
-        if (!string.IsNullOrWhiteSpace(sort) && meta.Columns.TryGetValue(sort, out var colDef) && colDef.Sortable)
+        if (keyset)
         {
-            var expr = colDef.Expression ?? $"{meta.Table}.{sort}";
-            var direction = (dir?.ToLowerInvariant() == "desc") ? "DESC" : "ASC";
-            sql.Add($" ORDER BY {expr} {direction}");
+            if (long.TryParse(cursor, out var cursorValue))
+            {
+                where.Add($"{meta.Table}.{meta.Key} > @Cursor");
+                param.Add("Cursor", cursorValue);
+            }
+
+            AppendWhere(sql, where);
+            sql.Add($" ORDER BY {meta.Table}.{meta.Key} ASC");
+        }
+        else
+        {
+            AppendWhere(sql, where);
+            if (!string.IsNullOrWhiteSpace(sort) && meta.Columns.TryGetValue(sort, out var colDef) && colDef.Sortable)
+            {
+                var expr = colDef.Expression ?? $"{meta.Table}.{sort}";
+                var direction = (dir?.ToLowerInvariant() == "desc") ? "DESC" : "ASC";
+                sql.Add($" ORDER BY {expr} {direction}");
+            }
         }
 
-        sql.Add(" LIMIT @PageSize OFFSET @Offset");
+        var effectivePageSize = fetchOneExtra ? pageSize.Value + 1 : pageSize.Value;
+        sql.Add(" LIMIT @PageSize");
+        param.Add("PageSize", effectivePageSize);
 
-        var offset = (page - 1) * pageSize.Value;
-        param.Add("PageSize", pageSize);
-        param.Add("Offset", offset);
+        if (!keyset)
+        {
+            sql.Add(" OFFSET @Offset");
+            var offset = (page - 1) * pageSize.Value;
+            param.Add("Offset", offset);
+        }
 
         var statement = string.Join(Environment.NewLine, sql);
         _logger.LogInformation("GetAllAsync entity={Entity} page={Page} pageSize={PageSize} sql={Sql}", entity, page, pageSize, statement);
