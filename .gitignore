@@ -1,0 +1,20 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# User files
+**/*.user
+**/*.suo
+**/.vs/
+
+# Logs and runtime
+**/logs/
+*.log
+
+# Local DB / cache
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# OS
+.DS_Store

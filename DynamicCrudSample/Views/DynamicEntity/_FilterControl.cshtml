@@ -1,0 +1,93 @@
+@model (string Name, FilterDefinition Filter, Dictionary<string, string?> Filters)
+
+@{
+    var current = Model.Filters.TryGetValue(Model.Name, out var one) ? one : null;
+    var values = (current ?? string.Empty)
+        .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var min = Model.Filters.TryGetValue($"{Model.Name}_min", out var minVal) ? minVal : null;
+    var max = Model.Filters.TryGetValue($"{Model.Name}_max", out var maxVal) ? maxVal : null;
+    var from = Model.Filters.TryGetValue($"{Model.Name}_from", out var fromVal) ? fromVal : null;
+    var to = Model.Filters.TryGetValue($"{Model.Name}_to", out var toVal) ? toVal : null;
+}
+
+@switch (Model.Filter.Type)
+{
+    case "dropdown":
+        <select name="@Model.Name" class="select select-bordered w-full">
+            <option value="">All @Model.Filter.GetLabel(Model.Name)</option>
+            @if (Model.Filter.ForeignKey != null && ViewBag.ForeignKeyData is Dictionary<string, IEnumerable<dynamic>> fkData && fkData.TryGetValue(Model.Name, out var items))
+            {
+                foreach (var item in items)
+                {
+                    var dict = (IDictionary<string, object>)item;
+                    if (!dict.TryGetValue("Id", out var rawId) || rawId == null)
+                    {
+                        continue;
+                    }
+                    var id = rawId.ToString();
+                    var text = dict[Model.Filter.ForeignKey.DisplayColumn];
+                    <option value="@id" selected="@(current == id ? "selected" : null)">@text</option>
+                }
+            }
+            else if (Model.Filter.Options != null)
+            {
+                foreach (var opt in Model.Filter.Options)
+                {
+                    <option value="@opt" selected="@(current == opt ? "selected" : null)">@opt</option>
+                }
+            }
+        </select>
+        break;
+    case "checkbox":
+        foreach (var opt in Model.Filter.Options ?? Enumerable.Empty<string>())
+        {
+            var id = $"{Model.Name}_{opt}";
+            bool checkedVal = values.Contains(opt);
+            <label class="label cursor-pointer justify-start gap-2">
+                <input type="checkbox" name="@Model.Name" value="@opt" id="@id" class="checkbox checkbox-sm" checked="@(checkedVal ? "checked" : null)" />
+                <span class="label-text">@opt</span>
+            </label>
+        }
+        break;
+    case "multi-select":
+        <select name="@Model.Name" multiple class="select select-bordered w-full min-h-28">
+            @if (Model.Filter.ForeignKey != null && ViewBag.ForeignKeyData is Dictionary<string, IEnumerable<dynamic>> fkData2 && fkData2.TryGetValue(Model.Name, out var fkItems))
+            {
+                foreach (var item in fkItems)
+                {
+                    var dict = (IDictionary<string, object>)item;
+                    if (!dict.TryGetValue("Id", out var rawId) || rawId == null)
+                    {
+                        continue;
+                    }
+                    var id = rawId.ToString();
+                    var text = dict[Model.Filter.ForeignKey.DisplayColumn];
+                    <option value="@id" selected="@(values.Contains(id ?? string.Empty) ? "selected" : null)">@text</option>
+                }
+            }
+            else
+            {
+                foreach (var opt in Model.Filter.Options ?? Enumerable.Empty<string>())
+                {
+                    <option value="@opt" selected="@(values.Contains(opt) ? "selected" : null)">@opt</option>
+                }
+            }
+        </select>
+        break;
+    case "range":
+        <div class="grid grid-cols-2 gap-2">
+            <input type="number" step="0.01" name="@($"{Model.Name}_min")" value="@min" class="input input-bordered w-full" placeholder="Min" />
+            <input type="number" step="0.01" name="@($"{Model.Name}_max")" value="@max" class="input input-bordered w-full" placeholder="Max" />
+        </div>
+        break;
+    case "date-range":
+        <div class="grid grid-cols-2 gap-2">
+            <input type="date" name="@($"{Model.Name}_from")" value="@from" class="input input-bordered w-full" />
+            <input type="date" name="@($"{Model.Name}_to")" value="@to" class="input input-bordered w-full" />
+        </div>
+        break;
+    default:
+        <input type="text" name="@Model.Name" value="@current" class="input input-bordered w-full" />
+        break;
+}

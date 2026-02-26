@@ -1,0 +1,15 @@
+@model DynamicCrudSample.Controllers.DynamicFormViewModel
+@{
+    ViewData["Title"] = Model.Meta.GetDisplayName() + " Form";
+}
+
+<div class="space-y-4">
+    <div class="breadcrumbs text-sm">
+        <ul>
+            <li><a href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">@Model.Meta.GetDisplayName()</a></li>
+            <li>@(Model.Item == null ? "Create" : "Edit")</li>
+        </ul>
+    </div>
+
+    @await Html.PartialAsync("_Form", Model)
+</div>

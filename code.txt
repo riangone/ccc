@@ -1,0 +1,1111 @@
+===== C:\ws\test\DynamicCrudSample\DynamicCrudSample.csproj =====
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+</Project>
+===== C:\ws\test\DynamicCrudSample\Program.cs =====
+using System.Data;
+using DynamicCrudSample.Models;
+using DynamicCrudSample.Services;
+using Microsoft.Data.SqlClient;
+using Microsoft.Data.Sqlite;
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllersWithViews();
+// YAML メタデータ
+builder.Services.AddSingleton<IEntityMetadataProvider, EntityMetadataProvider>();
+// SQLite 接続
+builder.Services.AddScoped<IDbConnection>(_ =>
+{
+    var cs = builder.Configuration.GetConnectionString("DefaultConnection")
+             ?? "Data Source=app.db";
+    return new SqliteConnection(cs);
+});
+// 型変換・バリデーション
+builder.Services.AddSingleton<IValueConverter, ValueConverter>();
+// CRUD リポジトリ
+builder.Services.AddScoped<IDynamicCrudRepository, DynamicCrudRepository>();
+var app = builder.Build();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+}
+app.UseStaticFiles();
+app.UseRouting();
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=DynamicEntity}/{action=Index}/{id?}");
+app.Run();
+===== C:\ws\test\DynamicCrudSample\Controllers\DynamicEntityController.cs =====
+using DynamicCrudSample.Models;
+using DynamicCrudSample.Services;
+using Microsoft.AspNetCore.Mvc;
+namespace DynamicCrudSample.Controllers;
+public class DynamicEntityController : Controller
+{
+    private readonly IDynamicCrudRepository _repo;
+    private readonly IEntityMetadataProvider _meta;
+    private readonly IValueConverter _converter;
+    public DynamicEntityController(
+        IDynamicCrudRepository repo,
+        IEntityMetadataProvider meta,
+        IValueConverter converter)
+    {
+        _repo = repo;
+        _meta = meta;
+        _converter = converter;
+    }
+    public async Task<IActionResult> Index(
+        string entity = "customer",
+        string? search = null,
+        string? sort = null,
+        string? dir = null,
+        int? pageSize = null)
+    {
+        var meta = _meta.Get(entity);
+        pageSize ??= meta.Paging.PageSize;
+        var filterColumns = meta.Filters
+            .Select(c => c.Key)
+            .ToList();
+        var filters = new Dictionary<string, string?>();
+        foreach (var col in filterColumns)
+        {
+            // Request.Form / QueryString から自動取得
+            filters[col] = Request.Query[col].FirstOrDefault();
+        }
+        var total = await _repo.CountAsync(entity, search);
+        var items = await _repo.GetAllAsync(entity, search, sort, dir, filters, 1, pageSize);
+        var fkData = await LoadForeignKeyDataFilter(meta);
+        var page = 1; // 初期表示は常に1ページ目
+        return View("Index",
+            new DynamicListViewModel(entity, meta, items, search, sort, dir, fkData, page, total, new Dictionary<string, string?>(), pageSize.Value));
+    }
+    public async Task<IActionResult> ListPartial(
+        string entity = "customer",
+        string? search = null,
+        string? sort = null,
+        string? dir = null,
+        int page = 1,
+        int? pageSize = null)
+    {
+        var meta = _meta.Get(entity);
+        pageSize ??= meta.Paging.PageSize;
+        // ★ YAML からフィルタ対象カラムを取得
+        var filterColumns = meta.Filters
+            .Select(c => c.Key)
+            .ToList();
+        // ★ フィルタ値を自動で取得
+        var filters = new Dictionary<string, string?>();
+        foreach (var col in filterColumns)
+        {
+            filters[col] = Request.Query[col].FirstOrDefault();
+        }
+        var total = await _repo.CountAsync(entity, search, filters);
+        var items = await _repo.GetAllAsync(entity, search, sort, dir, filters, page, pageSize);
+        var fkData = await LoadForeignKeyDataForm(meta);
+        return PartialView("_List",
+            new DynamicListViewModel(entity, meta, items, search, sort, dir, fkData, page, total, filters, pageSize.Value));
+    }
+    public async Task<IActionResult> CreateForm(string entity = "customer")
+    {
+        var meta = _meta.Get(entity);
+        var fkData = await LoadForeignKeyDataForm(meta);
+        return PartialView("_Form", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>()));
+    }
+    [HttpPost]
+    public async Task<IActionResult> Create(string entity, [FromForm] Dictionary<string, string?> form)
+    {
+        var meta = _meta.Get(entity);
+        var (values, errors) = ConvertAndValidate(meta, form, isEdit: false);
+        if (errors.Any())
+        {
+            var fkData = await LoadForeignKeyDataForm(meta);
+            return PartialView("_Form", new DynamicFormViewModel(entity, meta, null, fkData, errors));
+        }
+        await _repo.InsertAsync(entity, values);
+        var total = await _repo.CountAsync(entity, "");
+        var items = await _repo.GetAllAsync(entity, null, null, null);
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, null, 1, total));
+    }
+    public async Task<IActionResult> EditForm(string entity, int id)
+    {
+        var meta = _meta.Get(entity);
+        var item = await _repo.GetByIdAsync(entity, id);
+        var fkData = await LoadForeignKeyDataForm(meta);
+        return PartialView("_Form", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>()));
+    }
+    [HttpPost]
+    public async Task<IActionResult> Edit(string entity, int id, [FromForm] Dictionary<string, string?> form)
+    {
+        var meta = _meta.Get(entity);
+        var (values, errors) = ConvertAndValidate(meta, form, isEdit: true);
+        if (errors.Any())
+        {
+            var item = await _repo.GetByIdAsync(entity, id);
+            var fkData = await LoadForeignKeyDataForm(meta);
+            return PartialView("_Form", new DynamicFormViewModel(entity, meta, item, fkData, errors));
+        }
+        await _repo.UpdateAsync(entity, id, values);
+        var total = await _repo.CountAsync(entity, "");
+        var items = await _repo.GetAllAsync(entity, null, null, null);
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, null, 1, total));
+    }
+    [HttpPost]
+    public async Task<IActionResult> Delete(string entity, int id)
+    {
+        var meta = _meta.Get(entity);
+        await _repo.DeleteAsync(entity, id);
+        var total = await _repo.CountAsync(entity, null);
+        var items = await _repo.GetAllAsync(entity, null, null, null);
+        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, null, 1, total));
+    }
+    private (Dictionary<string, object?> values, Dictionary<string, string> errors)
+        ConvertAndValidate(EntityDefinition meta, Dictionary<string, string?> form, bool isEdit)
+    {
+        var values = new Dictionary<string, object?>();
+        var errors = new Dictionary<string, string>();
+        foreach (var kv in meta.Columns)
+        {
+            var name = kv.Key;
+            var col = kv.Value;
+            if (col.Identity)
+                continue;
+            form.TryGetValue(name, out var raw);
+            if (col.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!form.ContainsKey(name))
+                {
+                    raw = "false";
+                }
+            }
+            if (!_converter.TryConvert(raw, col, out var val, out var error))
+            {
+                errors[name] = error ?? "Invalid value";
+            }
+            else
+            {
+                values[name] = val;
+            }
+        }
+        return (values, errors);
+    }
+    private async Task<Dictionary<string, IEnumerable<dynamic>>> LoadForeignKeyDataFilter(EntityDefinition meta)
+    {
+        var result = new Dictionary<string, IEnumerable<dynamic>>();
+        foreach (var col in meta.Filters.Where(c => c.Value.ForeignKey != null))
+        {
+            var fk = col.Value.ForeignKey!;
+            var items = await _repo.GetAllForEntityAsync(fk.Entity);
+            result[col.Key] = items;
+        }
+        return result;
+    }
+    private async Task<Dictionary<string, IEnumerable<dynamic>>> LoadForeignKeyDataForm(EntityDefinition meta)
+    {
+        var result = new Dictionary<string, IEnumerable<dynamic>>();
+        foreach (var col in meta.Forms.Where(c => c.Value.ForeignKey != null))
+        {
+            var fk = col.Value.ForeignKey!;
+            var items = await _repo.GetAllForEntityAsync(fk.Entity);
+            result[col.Key] = items;
+        }
+        return result;
+    }
+}
+public record DynamicListViewModel(
+    string Entity,
+    EntityDefinition Meta,
+    IEnumerable<dynamic> Items,
+    string? Search,
+    string? Sort,
+    string? Dir,
+    Dictionary<string, IEnumerable<dynamic>> ForeignKeyData,
+    int Page,
+    int Total,
+    Dictionary<string, string?>? Filters = null,
+    int PageSize = 5);
+public record DynamicFormViewModel(
+    string Entity,
+    EntityDefinition Meta,
+    dynamic? Item,
+    Dictionary<string, IEnumerable<dynamic>> ForeignKeyData,
+    Dictionary<string, string> Errors);
+===== C:\ws\test\DynamicCrudSample\Controllers\HomeController.cs =====
+using System.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
+using DynamicCrudSample.Models;
+namespace DynamicCrudSample.Controllers;
+public class HomeController : Controller
+{
+    public IActionResult Index()
+    {
+        return View();
+    }
+    public IActionResult Privacy()
+    {
+        return View();
+    }
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public IActionResult Error()
+    {
+        return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+    }
+}
+===== C:\ws\test\DynamicCrudSample\Models\EntityMetadata.cs =====
+namespace DynamicCrudSample.Models;
+public class ForeignKeyDefinition
+{
+    public string Entity { get; set; } = default!;
+    public string DisplayColumn { get; set; } = "Id";
+}
+public class JoinDefinition
+{
+    public string Type { get; set; } = "left"; // left / inner / right
+    public string Table { get; set; } = default!;
+    public string Alias { get; set; } = default!;
+    public string On { get; set; } = default!;
+}
+public class FormDefinition
+{
+    public string Type { get; set; } = "string";
+    public bool Identity { get; set; }
+    public bool Required { get; set; }
+    public string? Label { get; set; }
+    public bool Searchable { get; set; }
+    public bool Sortable { get; set; }
+    public bool Editable { get; set; } = true;   // デフォルトは編集可能
+    // public string? Filter { get; set; }          // "dropdown" など
+    public string? Expression { get; set; } // ← 追加
+    public ForeignKeyDefinition? ForeignKey { get; set; }
+    // public FilterDefinition? Filter { get; set; }
+    public bool Hidden { get; set; } = false;
+}
+public class ColumnDefinition
+{
+    public string Type { get; set; } = "string";
+    public bool Identity { get; set; }
+    public bool Required { get; set; }
+    public string? Label { get; set; }
+    public bool Searchable { get; set; }
+    public bool Sortable { get; set; }
+    public bool Editable { get; set; } = true;   // デフォルトは編集可能
+    // public string? Filter { get; set; }          // "dropdown" など
+    public string? Expression { get; set; } // ← 追加
+    public ForeignKeyDefinition? ForeignKey { get; set; }
+    // public FilterDefinition? Filter { get; set; }
+    public bool Hidden { get; set; } = false;
+}
+public class PagingDefinition
+{
+    public int PageSize { get; set; } = 5;
+    public string Mode { get; set; } = "numbered"; // numbered / infinite-scroll / none
+}
+public class FilterDefinition
+{
+    public string Type { get; set; } =  "dropdown"; // dropdown/range/date-range/checkbox/multi-select
+    public string? Label { get; set; }
+    public string? Expression { get; set; } // ← 追加
+    public ForeignKeyDefinition? ForeignKey { get; set; }
+    public List<string>? Options { get; set; }
+}
+public class EntityDefinition
+{
+    public string Table { get; set; } = default!;
+    public string Key { get; set; } = default!;
+    public string DisplayName { get; set; } = default!;
+    public List<JoinDefinition> Joins { get; set; } = new();
+    public Dictionary<string, FormDefinition> Forms { get; set; } = new();
+    public Dictionary<string, ColumnDefinition> Columns { get; set; } = new();
+    public PagingDefinition Paging { get; set; } = new();
+    public bool SoftDelete { get; set; }
+    public Dictionary<string, FilterDefinition> Filters { get; set; } = new();
+}
+public class EntityConfigRoot
+{
+    public Dictionary<string, EntityDefinition> Entities { get; set; } = new();
+}
+===== C:\ws\test\DynamicCrudSample\Models\ErrorViewModel.cs =====
+namespace DynamicCrudSample.Models;
+public class ErrorViewModel
+{
+    public string? RequestId { get; set; }
+    public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+}
+===== C:\ws\test\DynamicCrudSample\Services\DynamicCrudRepository.cs =====
+using System.Data;
+using System.Text;
+using Dapper;
+using DynamicCrudSample.Models;
+namespace DynamicCrudSample.Services;
+public interface IDynamicCrudRepository
+{
+    Task<IEnumerable<dynamic>> GetAllAsync(string entity, string? search, string? sort, string? dir, Dictionary<string, string?>? filters = null, int page = 1, int? pageSize = null);
+    Task<dynamic?> GetByIdAsync(string entity, object id);
+    Task<int> InsertAsync(string entity, IDictionary<string, object?> values);
+    Task<int> UpdateAsync(string entity, object id, IDictionary<string, object?> values);
+    Task<int> DeleteAsync(string entity, object id);
+    Task<IEnumerable<dynamic>> GetAllForEntityAsync(string entity);
+    Task<int> CountAsync(string entity, string? search, Dictionary<string, string?>? filters = null);
+}
+public class DynamicCrudRepository : IDynamicCrudRepository
+{
+    private readonly IDbConnection _db;
+    private readonly IEntityMetadataProvider _meta;
+    public DynamicCrudRepository(IDbConnection db, IEntityMetadataProvider meta)
+    {
+        _db = db;
+        _meta = meta;
+    }
+    public async Task<IEnumerable<dynamic>> GetAllAsync(
+        string entity,
+        string? search,
+        string? sort,
+        string? dir,
+        Dictionary<string, string?>? filters = null,
+        int page = 1,
+        int? pageSize = null)
+    {
+        var meta = _meta.Get(entity);
+        if (pageSize == null)
+        {
+            pageSize = meta.Paging.PageSize;
+        }
+        // SELECT 句
+        var selectList = string.Join(", ",
+            meta.Columns.Select(c =>
+                c.Value.Expression != null
+                    ? $"{c.Value.Expression} AS {c.Key}"
+                    : $"{meta.Table}.{c.Key}"
+            )
+        );
+        var sql = new List<string>();
+        sql.Add($"SELECT {selectList} FROM {meta.Table}");
+        // JOIN 句
+        foreach (var j in meta.Joins)
+        {
+            sql.Add($" {j.Type.ToUpper()} JOIN {j.Table} {j.Alias} ON {j.On}");
+        }
+        var where = new List<string>();
+        var param = new DynamicParameters();
+        // 🔥 フィルタ処理
+        if (filters != null)
+        {
+            foreach (var f in meta.Filters)
+            {
+                if (filters.TryGetValue(f.Key, out var val) && !string.IsNullOrEmpty(val))
+                {
+                    var expr = f.Value.Expression ?? $"{meta.Table}.{f.Key}";
+                    where.Add($"{expr} = @{f.Key}");
+                    param.Add(f.Key, val);
+                }
+            }
+        }
+        // 検索
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchable = meta.Columns.Where(c => c.Value.Searchable).ToList();
+            if (searchable.Any())
+            {
+                var likeClauses = new List<string>();
+                foreach (var col in searchable)
+                {
+                    var expr = col.Value.Expression ?? $"{meta.Table}.{col.Key}";
+                    var p = $"@s_{col.Key}";
+                    likeClauses.Add($"{expr} LIKE {p}");
+                    param.Add(p, $"%{search}%");
+                }
+                where.Add("(" + string.Join(" OR ", likeClauses) + ")");
+            }
+        }
+        if (meta.SoftDelete)
+        {
+            where.Add($"( {meta.Table}.IsDeleted = 0 OR {meta.Table}.IsDeleted IS NULL )");
+        }
+        if (where.Any())
+        {
+            sql.Add("WHERE " + string.Join(" AND ", where));
+        }
+        // ソート
+        if (!string.IsNullOrWhiteSpace(sort) && meta.Columns.TryGetValue(sort, out var colDef) && colDef.Sortable)
+        {
+            var expr = colDef.Expression ?? $"{meta.Table}.{sort}";
+            var direction = (dir?.ToLowerInvariant() == "desc") ? "DESC" : "ASC";
+            sql.Add($" ORDER BY {expr} {direction}");
+        }
+        sql.Add($" LIMIT @PageSize OFFSET @Offset");
+        var offset = (page - 1) * pageSize;
+        param.Add("PageSize", pageSize);
+        param.Add("Offset", offset);
+        return await _db.QueryAsync(string.Join(System.Environment.NewLine, sql), param);
+    }
+    public async Task<dynamic?> GetByIdAsync(string entity, object id)
+    {
+        var meta = _meta.Get(entity);
+        StringBuilder sql = new();
+        sql.AppendLine($"SELECT * FROM {meta.Table} WHERE {meta.Key} = @Id");
+        if (meta.SoftDelete)
+        {
+           sql.AppendLine($"AND ({meta.Table}.IsDeleted = 0 OR {meta.Table}.IsDeleted IS NULL)");
+        }
+        return (await _db.QueryAsync(sql.ToString(), new { Id = id })).FirstOrDefault();
+    }
+    public async Task<int> InsertAsync(string entity, IDictionary<string, object?> values)
+    {
+        var meta = _meta.Get(entity);
+        var cols = meta.Columns
+            .Where(c => !c.Value.Identity)
+            .Select(c => c.Key)
+            .ToArray();
+        var colList = string.Join(", ", cols);
+        var paramList = string.Join(", ", cols.Select(c => "@" + c));
+        var sql = $"INSERT INTO {meta.Table} ({colList}) VALUES ({paramList});";
+        return await _db.ExecuteAsync(sql, values);
+    }
+    public async Task<int> UpdateAsync(string entity, object id, IDictionary<string, object?> values)
+    {
+        var meta = _meta.Get(entity);
+        var fields = meta.Forms
+            .Where(f => !f.Value.Identity && values.ContainsKey(f.Key) && f.Value.Editable != false)
+            .Select(f => f.Key)
+            .ToArray();
+        var setClause = string.Join(", ", fields.Select(f => $"{f} = @{f}"));
+        var sql = $"UPDATE {meta.Table} SET {setClause} WHERE {meta.Key} = @Id";
+        var param = new DynamicParameters(values);
+        param.Add("Id", id);
+        return await _db.ExecuteAsync(sql, param);
+    }
+    public async Task<int> DeleteAsync(string entity, object id)
+    {
+        var meta = _meta.Get(entity);
+        var sql = "";
+        if (meta.SoftDelete)
+        {
+            sql = $"UPDATE {meta.Table} SET IsDeleted = 1 WHERE {meta.Key} = @Id";
+            return await _db.ExecuteAsync(sql, new { Id = id });
+        }
+        sql = $"DELETE FROM {meta.Table} WHERE {meta.Key} = @Id";
+        return await _db.ExecuteAsync(sql, new { Id = id });
+    }
+    public async Task<IEnumerable<dynamic>> GetAllForEntityAsync(string entity)
+    {
+        var meta = _meta.Get(entity);
+        var sql = $"SELECT * FROM {meta.Table}";
+        return await _db.QueryAsync(sql);
+    }
+    public async Task<int> CountAsync(string entity, string? search, Dictionary<string, string?>? filters = null)
+    {
+        var meta = _meta.Get(entity);
+        var sql = $"SELECT COUNT(*) FROM {meta.Table}";
+        var where = new List<string>();
+        var param = new DynamicParameters();
+        // 🔥 フィルタ処理
+        if (filters != null)
+        {
+            foreach (var f in meta.Filters)
+            {
+                if (filters.TryGetValue(f.Key, out var val) && !string.IsNullOrEmpty(val))
+                {
+                    var expr = f.Value.Expression ?? $"{meta.Table}.{f.Key}";
+                    where.Add($"{expr} = @{f.Key}");
+                    param.Add(f.Key, val);
+                }
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchable = meta.Columns.Where(c => c.Value.Searchable).ToList();
+            if (searchable.Any())
+            {
+                var likeClauses = new List<string>();
+                foreach (var col in searchable)
+                {
+                    var expr = col.Value.Expression ?? $"{meta.Table}.{col.Key}";
+                    var p = $"@s_{col.Key}";
+                    likeClauses.Add($"{expr} LIKE {p}");
+                    param.Add(p, $"%{search}%");
+                }
+                where.Add("(" + string.Join(" OR ", likeClauses) + ")");
+            }
+        }
+        if (meta.SoftDelete)
+        {
+            where.Add($"( {meta.Table}.IsDeleted = 0 OR {meta.Table}.IsDeleted IS NULL )");
+        }
+        if (where.Any())
+            sql += " WHERE " + string.Join(" AND ", where);
+        return await _db.ExecuteScalarAsync<int>(sql, param);
+    }
+}
+===== C:\ws\test\DynamicCrudSample\Services\EntityMetadataProvider.cs =====
+using DynamicCrudSample.Models;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+namespace DynamicCrudSample.Services;
+public interface IEntityMetadataProvider
+{
+    EntityDefinition Get(string entityName);
+    IReadOnlyDictionary<string, EntityDefinition> GetAll();
+}
+public class EntityMetadataProvider : IEntityMetadataProvider
+{
+    private readonly Dictionary<string, EntityDefinition> _entities;
+    public EntityMetadataProvider(IWebHostEnvironment env)
+    {
+        var path = Path.Combine(env.ContentRootPath, "config", "entities.yml");
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException("entities.yml not found", path);
+        }
+        var yaml = File.ReadAllText(path);
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+        var root = deserializer.Deserialize<EntityConfigRoot>(yaml);
+        _entities = root.Entities;
+    }
+    public EntityDefinition Get(string entityName) => _entities[entityName];
+    public IReadOnlyDictionary<string, EntityDefinition> GetAll() => _entities;
+}
+===== C:\ws\test\DynamicCrudSample\Services\ValueConverter.cs =====
+using DynamicCrudSample.Models;
+using System.Globalization;
+namespace DynamicCrudSample.Services;
+public interface IValueConverter
+{
+    bool TryConvert(string? input, ColumnDefinition column, out object? value, out string? error);
+}
+public class ValueConverter : IValueConverter
+{
+    public bool TryConvert(string? input, ColumnDefinition column, out object? value, out string? error)
+    {
+        value = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            if (column.Required && !column.Identity)
+            {
+                error = "Required";
+                return false;
+            }
+            return true;
+        }
+        switch (column.Type.ToLowerInvariant())
+        {
+            case "int":
+                if (int.TryParse(input, out var i))
+                {
+                    value = i;
+                    return true;
+                }
+                error = "Invalid integer";
+                return false;
+            case "datetime":
+                if (DateTime.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+                {
+                    value = dt;
+                    return true;
+                }
+                error = "Invalid date";
+                return false;
+            case "bool":
+                if (bool.TryParse(input, out var b))
+                {
+                    value = b;
+                    return true;
+                }
+                // HTML checkbox: "on"
+                if (input == "on")
+                {
+                    value = true;
+                    return true;
+                }
+                error = "Invalid boolean";
+                return false;
+            default:
+                value = input;
+                return true;
+        }
+    }
+}
+===== C:\ws\test\DynamicCrudSample\Views\_ViewImports.cshtml =====
+@using DynamicCrudSample
+@using DynamicCrudSample.Models
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+===== C:\ws\test\DynamicCrudSample\Views\_ViewStart.cshtml =====
+@{
+    Layout = "_Layout";
+}
+===== C:\ws\test\DynamicCrudSample\Views\DynamicEntity\Index.cshtml =====
+@using DynamicCrudSample.Models
+@model DynamicCrudSample.Controllers.DynamicListViewModel
+@{
+    ViewData["Title"] = Model.Meta.DisplayName;
+}
+@{
+    ViewBag.ForeignKeyData = Model.ForeignKeyData;
+}
+<h2>@Model.Meta.DisplayName</h2>
+<form class="row g-2 mb-3"
+      hx-get="@Url.Action("ListPartial", "DynamicEntity")"
+      hx-target="#list-container"
+      hx-swap="innerHTML">
+    <input type="hidden" name="entity" value="@Model.Entity" />
+    <div class="col-12">
+        <input type="text" name="search" value="@Model.Search" class="form-control" placeholder="Search..." />
+    </div>
+    @foreach (var f in Model.Meta.Filters)
+    {
+        var name = f.Key;
+        var def = f.Value;
+        var current = Model.Filters.ContainsKey(name) ? Model.Filters[name] : null;
+        <div class="col-auto">
+            @def.Label
+            @await Html.PartialAsync("_FilterControl", (name, def, current))
+        </div>
+    }
+    <div class="col-12">
+        <button type="submit" class="btn btn-outline-primary">Search</button>
+    </div>
+</form>
+<button class="btn btn-primary mb-3"
+        hx-get="@Url.Action("CreateForm", "DynamicEntity", new { entity = Model.Entity })"
+        hx-target="#form-container"
+        hx-swap="innerHTML">
+    New
+</button>
+<div id="form-container"></div>
+<div id="list-container"
+     hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = Model.Sort, dir = Model.Dir })"
+     hx-trigger="load"
+     hx-target="#list-container"
+     hx-swap="innerHTML">
+</div>
+===== C:\ws\test\DynamicCrudSample\Views\DynamicEntity\_FilterControl.cshtml =====
+@model (string Name, FilterDefinition Filter, string? Current)
+@switch (Model.Filter.Type)
+{
+@**@
+    case "dropdown":
+        <select name="@Model.Name" class="form-select">
+            <option value="">All @Model.Filter.Label</option>
+            @if (Model.Filter.ForeignKey != null && ViewBag.ForeignKeyData is Dictionary<string, IEnumerable<dynamic>> fkData && fkData.TryGetValue(Model.Name, out var items))
+            {
+                foreach (var item in items)
+                {
+                    var dict = (IDictionary<string, object>)item;
+                    var id = dict["Id"].ToString();
+                    var text = dict[Model.Filter.ForeignKey.DisplayColumn];
+                    <option value="@id" selected="@(Model.Current == id ? "selected" : null)">@text</option>
+                }
+            }
+        </select>
+        break;
+    case "checkbox":
+        <div class="col-auto">
+        @foreach (var opt in Model.Filter.Options ?? Enumerable.Empty<string>())
+        {
+            var id = $"{Model.Name}_{opt}";
+            bool checkedVal = (Model.Current?.Split(',') ?? Array.Empty<string>()).Contains(opt);
+            <div class="form-check form-check-inline">
+                <input type="checkbox" name="@Model.Name" value="@opt" id="@id"
+                       class="form-check-input" checked="@(checkedVal ? "checked" : null)" />
+                <label class="form-check-label" for="@id">@opt</label>
+            </div>
+        }
+        </div>
+        break;
+    case "range":
+        <input type="number" name="@Model.Name + "_min"" class="form-control" placeholder="@Model.Filter.Label Min" />
+        <input type="number" name="@Model.Name + "_max"" class="form-control mt-1" placeholder="@Model.Filter.Label Max" />
+        break;
+    case "date-range":
+        <input type="date" name="@Model.Name + "_from"" class="form-control" />
+        <input type="date" name="@Model.Name + "_to"" class="form-control mt-1" />
+        break;
+    case "multi-select":
+        <select name="@Model.Name" multiple class="form-select">
+            ...
+        </select>
+        break;
+}
+===== C:\ws\test\DynamicCrudSample\Views\DynamicEntity\_Form.cshtml =====
+@using DynamicCrudSample.Models
+@using Microsoft.AspNetCore.Routing
+@model DynamicCrudSample.Controllers.DynamicFormViewModel
+@{
+    var isEdit = Model.Item != null;
+    var action = isEdit ? "Edit" : "Create";
+    var routeValues = new RouteValueDictionary();
+    routeValues["entity"] = Model.Entity;
+    if (isEdit)
+    {
+        routeValues["id"] = (object)((IDictionary<string, object>)Model.Item)[Model.Meta.Key];
+    }
+}
+<div class="card mb-3 form">
+    <div class="card-body">
+        <h5 class="card-title">@Model.Meta.DisplayName - @(isEdit ? "Edit" : "Create")</h5>
+        <form hx-post="@Url.Action(action, "DynamicEntity", routeValues)"
+              hx-target="#list-container"
+              hx-swap="innerHTML">
+            <div class="row">
+                @foreach (var field in Model.Meta.Forms)
+                {
+                    var name = field.Key;
+                    var def = field.Value;
+                    if (def.Identity)
+                        continue;
+                    object? value = null;
+                    if (isEdit)
+                    {
+                        try
+                        {
+                            value = ((IDictionary<string, object>)Model.Item)[name];
+                        }
+                        catch { }
+                    }
+                    var label = def.Label ?? name;
+                    var error = Model.Errors.ContainsKey(name) ? Model.Errors[name] : null;
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">@label</label>
+                        @if (!def.Editable)
+                        {
+                            <input type="text" name="@name" value="@(value ?? "")" class="form-control" readonly disabled/>
+                        }
+                        else
+                        {
+                            @* 外部キー *@
+                            @if (def.ForeignKey != null && Model.ForeignKeyData.TryGetValue(name, out var fkItems))
+                            {
+                                <select name="@name" class="form-select">
+                                    <option value="">-- select --</option>
+                                    @foreach (var fk in fkItems)
+                                    {
+                                        var dict = (IDictionary<string, object>)fk;
+                                        var id = dict["Id"];
+                                        var text = dict[def.ForeignKey.DisplayColumn];
+                                        bool selected = (value != null && value.Equals(id));
+                                        <option value="@id" selected="@(selected ? "selected" : null)">
+                                            @text
+                                        </option>
+                                    }
+                                </select>
+                            }
+                            else if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
+                            {
+                                bool checkedValue = value is bool b && b;
+                                <input type="checkbox" name="@name" class="form-check-input" checked="@(checkedValue ? "checked" : null)" />
+                            }
+                            else if (def.Type.Equals("int", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <input type="number" name="@name" value="@(value ?? "")" class="form-control" />
+                            }
+                            else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase))
+                            {
+                                string v = value is DateTime dt ? dt.ToString("yyyy-MM-dd") : "";
+                                <input type="date" name="@name" value="@v" class="form-control" />
+                            }
+                            else
+                            {
+                                <input type="text" name="@name" value="@(value ?? "")" class="form-control" />
+                            }
+                            @if (!string.IsNullOrEmpty(error))
+                            {
+                                <div class="text-danger small">@error</div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+            <button type="submit" class="btn btn-primary">
+                @(isEdit ? "Update" : "Create")
+            </button>
+            <button class="btn btn-secondary" onclick="this.closest('.card.form').remove();">
+                Cancel
+            </button>
+        </form>
+    </div>
+</div>
+===== C:\ws\test\DynamicCrudSample\Views\DynamicEntity\_List.cshtml =====
+@using DynamicCrudSample.Models
+@model DynamicCrudSample.Controllers.DynamicListViewModel
+<div class="mb-2">
+    <label>Page Size:</label>
+    <select class="form-select d-inline w-auto"
+            hx-get="@Url.Action("ListPartial")"
+            hx-target="#list-container"
+            hx-swap="innerHTML"
+            name="pageSize">
+        @foreach (var size in new[] { 1, 3, 5, 10, 20, 50 })
+        {
+            <option value="@size" selected="@(Model.PageSize == size ? "selected" : null)">
+                @size
+            </option>
+        }
+    </select>
+    <input type="hidden" name="entity" value="@Model.Entity" />
+    <input type="hidden" name="search" value="@Model.Search" />
+    <input type="hidden" name="sort" value="@Model.Sort" />
+    <input type="hidden" name="dir" value="@Model.Dir" />
+</div>
+<table class="table table-striped table-sm">
+    <thead>
+        <tr>
+            @foreach (var col in Model.Meta.Columns)
+            {
+                var name = col.Key;
+                var def = col.Value;
+                if (def.Hidden)
+                {
+                    <th style="display: none;">@(def.Label ?? name)</th>
+                }
+                else
+                {
+                    if (!def.Sortable)
+                    {
+                        <th>@(def.Label ?? name)</th>
+                    }
+                    else
+                    {
+                        var nextDir = (Model.Sort == name && Model.Dir != "desc") ? "desc" : "asc";
+                        <th>
+                            <a href="#"
+                            hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = name, dir = nextDir })"
+                            hx-target="#list-container"
+                            hx-swap="innerHTML">
+                                @(def.Label ?? name)
+                                @(Model.Sort == name ? (Model.Dir == "desc" ? " ▼" : " ▲") : "")
+                            </a>
+                        </th>
+                    }
+                }
+            }
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                @foreach (var col in Model.Meta.Columns)
+                {
+                    var name = col.Key;
+                    var def = col.Value;
+                    object? value = null;
+                    try
+                    {
+                        value = ((IDictionary<string, object>)item)[name];
+                    }
+                    catch
+                    {
+                        value = null;
+                    }
+                    if (def.Hidden)
+                    {
+                        <td data-id="@col.Key" style="display: none;">@value</td>
+                    }
+                    else
+                    {
+                        <td data-id="@col.Key">
+                        @{
+                            if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
+                            {
+                                @(value is bool b && b ? "✔" : "");
+                            }
+                            else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase) && value is DateTime dt)
+                            {
+                                @dt.ToString("yyyy-MM-dd");
+                            }
+                            else
+                            {
+                                @(value);
+                            }
+                        }
+                        </td>
+                    }
+                }
+                <td class="text-end">
+                    <button class="btn btn-sm btn-secondary"
+                            hx-get="@Url.Action("EditForm", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })"
+                            hx-target="#form-container"
+                            hx-swap="innerHTML">
+                        Edit
+                    </button>
+                    <button class="btn btn-sm btn-danger"
+                            hx-post="@Url.Action("Delete", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })"
+                            hx-target="#list-container"
+                            hx-swap="innerHTML"
+                            hx-confirm="Delete this item?">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+@if(Model.Filters != null)
+{
+    @foreach (var f in Model.Filters)
+    {
+        <input type="hidden" name="@f.Key" value="@f.Value" />
+    }
+}
+@{
+    string qs = $"entity={Model.Entity}&search={Model.Search}&sort={Model.Sort}&dir={Model.Dir}";
+    @if(Model.Filters != null)
+    {
+        foreach (var f in Model.Filters)
+        {
+            qs += $"&{f.Key}={f.Value}";
+        }
+    }
+}
+@{
+    var pageSize = Model.PageSize;
+    var totalPages = (int)Math.Ceiling(Model.Total / (double)pageSize);
+    var current = Model.Page;
+}
+@if (Model.Meta.Paging.Mode == "numbered" && totalPages > 1)
+{
+    <nav>
+        <ul class="pagination">
+            <!-- 最初 -->
+            <li class="page-item @(current == 1 ? "disabled" : "")">
+                <a class="page-link"
+                hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                hx-target="#list-container"
+                hx-swap="innerHTML">« First</a>
+            </li>
+            <!-- 前 -->
+            <li class="page-item @(current == 1 ? "disabled" : "")">
+                <a class="page-link"
+                hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current - 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                hx-target="#list-container"
+                hx-swap="innerHTML">‹ Prev</a>
+            </li>
+            <!-- ページ番号 -->
+            @for (int i = 1; i <= totalPages; i++)
+            {
+                <li class="page-item @(i == current ? "active" : "")">
+                    <a class="page-link"
+                    hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = i, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                    hx-target="#list-container"
+                    hx-swap="innerHTML">@i</a>
+                </li>
+            }
+            <!-- 次 -->
+            <li class="page-item @(current == totalPages ? "disabled" : "")">
+                <a class="page-link"
+                hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current + 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                hx-target="#list-container"
+                hx-swap="innerHTML">Next ›</a>
+            </li>
+            <!-- 最後 -->
+            <li class="page-item @(current == totalPages ? "disabled" : "")">
+                <a class="page-link"
+                hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = totalPages, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                hx-target="#list-container"
+                hx-swap="innerHTML">Last »</a>
+            </li>
+        </ul>
+    </nav>
+}
+===== C:\ws\test\DynamicCrudSample\Views\Home\Index.cshtml =====
+@{
+    ViewData["Title"] = "Home Page";
+}
+<div class="text-center">
+    <h1 class="display-4">Welcome</h1>
+    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+</div>
+===== C:\ws\test\DynamicCrudSample\Views\Home\Privacy.cshtml =====
+@{
+    ViewData["Title"] = "Privacy Policy";
+}
+<h1>@ViewData["Title"]</h1>
+<p>Use this page to detail your site's privacy policy.</p>
+===== C:\ws\test\DynamicCrudSample\Views\Shared\Error.cshtml =====
+@model ErrorViewModel
+@{
+    ViewData["Title"] = "Error";
+}
+<h1 class="text-danger">Error.</h1>
+<h2 class="text-danger">An error occurred while processing your request.</h2>
+@if (Model.ShowRequestId)
+{
+    <p>
+        <strong>Request ID:</strong> <code>@Model.RequestId</code>
+    </p>
+}
+<h3>Development Mode</h3>
+<p>
+    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
+</p>
+<p>
+    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
+    It can result in displaying sensitive information from exceptions to end users.
+    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
+    and restarting the app.
+</p>
+===== C:\ws\test\DynamicCrudSample\Views\Shared\_Layout.cshtml =====
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - DynamicCrudSample</title>
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/DynamicCrudSample.styles.css" asp-append-version="true" />
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+            <div class="container-fluid">
+                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">DynamicCrudSample</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
+                        aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                    <ul class="navbar-nav flex-grow-1">
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+    </header>
+    <div class="container">
+        <main role="main" class="pb-3">
+            @RenderBody()
+        </main>
+    </div>
+    <footer class="border-top footer text-muted">
+        <div class="container">
+            &copy; 2026 - DynamicCrudSample - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+        </div>
+    </footer>
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
+===== C:\ws\test\DynamicCrudSample\Views\Shared\_ValidationScriptsPartial.cshtml =====
+<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
+<script src="~/lib/jquery-validation-unobtrusive/dist/jquery.validate.unobtrusive.min.js"></script>

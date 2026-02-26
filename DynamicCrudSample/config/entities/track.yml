@@ -1,0 +1,50 @@
+entities:
+  track:
+    table: Track
+    key: TrackId
+    displayName: Track
+    displayNameI18n:
+      en-US: Track
+      zh-CN: 曲目
+      ja-JP: トラック
+    softDelete: false
+    paging: { pageSize: 10, mode: numbered }
+    layout:
+      forms: { columns: 2, order: [Name, AlbumId, GenreId, UnitPrice, Milliseconds] }
+      filters: { columns: 3, order: [GenreId, UnitPrice] }
+    joins:
+      - { type: left, table: Album, alias: al, on: Track.AlbumId = al.AlbumId }
+      - { type: left, table: Genre, alias: g, on: Track.GenreId = g.GenreId }
+    columns:
+      TrackId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      Name: { type: string, label: Name, labelI18n: { en-US: Name, zh-CN: 名称, ja-JP: 名前 }, searchable: true, sortable: true }
+      AlbumId: { type: int, label: Album, labelI18n: { en-US: Album, zh-CN: 专辑, ja-JP: アルバム }, sortable: true }
+      AlbumTitle: { type: string, identity: true, label: Album, labelI18n: { en-US: Album, zh-CN: 专辑, ja-JP: アルバム }, expression: al.Title, searchable: true, sortable: true }
+      GenreId: { type: int, label: Genre, labelI18n: { en-US: Genre, zh-CN: 流派, ja-JP: ジャンル }, sortable: true }
+      GenreName: { type: string, identity: true, label: Genre, labelI18n: { en-US: Genre, zh-CN: 流派, ja-JP: ジャンル }, expression: g.Name, searchable: true, sortable: true }
+      UnitPrice: { type: decimal, label: Price, labelI18n: { en-US: Price, zh-CN: 价格, ja-JP: 価格 }, searchable: false, sortable: true }
+      Milliseconds: { type: int, label: Length(ms), labelI18n: { en-US: Length(ms), zh-CN: 时长(毫秒), ja-JP: 長さ(ms) }, searchable: false, sortable: true }
+    forms:
+      Name: { type: string, label: Name, labelI18n: { en-US: Name, zh-CN: 名称, ja-JP: 名前 }, editable: true }
+      AlbumId:
+        type: int
+        label: Album
+        labelI18n: { en-US: Album, zh-CN: 专辑, ja-JP: アルバム }
+        editable: true
+        foreignKey: { entity: album, displayColumn: Title }
+      GenreId:
+        type: int
+        label: Genre
+        labelI18n: { en-US: Genre, zh-CN: 流派, ja-JP: ジャンル }
+        editable: true
+        foreignKey: { entity: genre, displayColumn: Name }
+      UnitPrice: { type: decimal, label: Price, labelI18n: { en-US: Price, zh-CN: 价格, ja-JP: 価格 }, editable: true }
+      Milliseconds: { type: int, label: Length(ms), labelI18n: { en-US: Length(ms), zh-CN: 时长(毫秒), ja-JP: 長さ(ms) }, editable: true }
+    filters:
+      GenreId:
+        type: dropdown
+        label: Genre
+        labelI18n: { en-US: Genre, zh-CN: 流派, ja-JP: ジャンル }
+        expression: Track.GenreId
+        foreignKey: { entity: genre, displayColumn: Name }
+      UnitPrice: { type: range, label: Price Range, labelI18n: { en-US: Price Range, zh-CN: 价格范围, ja-JP: 価格範囲 }, expression: Track.UnitPrice }

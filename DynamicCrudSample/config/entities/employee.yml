@@ -1,0 +1,29 @@
+entities:
+  employee:
+    table: Employee
+    key: EmployeeId
+    displayName: Employee
+    displayNameI18n:
+      en-US: Employee
+      zh-CN: 员工
+      ja-JP: 従業員
+    softDelete: false
+    paging: { pageSize: 10, mode: numbered }
+    layout:
+      forms: { columns: 2, order: [FirstName, LastName, Title, BirthDate, HireDate] }
+      filters: { columns: 2, order: [BirthDate] }
+    columns:
+      EmployeeId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      FirstName: { type: string, label: First Name, labelI18n: { en-US: First Name, zh-CN: 名, ja-JP: 名 }, searchable: true, sortable: true }
+      LastName: { type: string, label: Last Name, labelI18n: { en-US: Last Name, zh-CN: 姓, ja-JP: 姓 }, searchable: true, sortable: true }
+      Title: { type: string, label: Title, labelI18n: { en-US: Title, zh-CN: 职位, ja-JP: 役職 }, searchable: true, sortable: true }
+      BirthDate: { type: date, label: Birth Date, labelI18n: { en-US: Birth Date, zh-CN: 生日, ja-JP: 生年月日 }, searchable: false, sortable: true }
+      HireDate: { type: date, label: Hire Date, labelI18n: { en-US: Hire Date, zh-CN: 入职日期, ja-JP: 入社日 }, searchable: false, sortable: true }
+    forms:
+      FirstName: { type: string, label: First Name, labelI18n: { en-US: First Name, zh-CN: 名, ja-JP: 名 }, editable: true }
+      LastName: { type: string, label: Last Name, labelI18n: { en-US: Last Name, zh-CN: 姓, ja-JP: 姓 }, editable: true }
+      Title: { type: string, label: Title, labelI18n: { en-US: Title, zh-CN: 职位, ja-JP: 役職 }, editable: true }
+      BirthDate: { type: date, label: Birth Date, labelI18n: { en-US: Birth Date, zh-CN: 生日, ja-JP: 生年月日 }, editable: true }
+      HireDate: { type: date, label: Hire Date, labelI18n: { en-US: Hire Date, zh-CN: 入职日期, ja-JP: 入社日 }, editable: true }
+    filters:
+      BirthDate: { type: date-range, label: Birth Date, labelI18n: { en-US: Birth Date, zh-CN: 生日范围, ja-JP: 生年月日範囲 }, expression: Employee.BirthDate }

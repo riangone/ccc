@@ -1,0 +1,49 @@
+entities:
+  invoice:
+    table: Invoice
+    key: InvoiceId
+    displayName: Invoice
+    displayNameI18n:
+      en-US: Invoice
+      zh-CN: 发票
+      ja-JP: 請求書
+    softDelete: false
+    paging: { pageSize: 10, mode: numbered }
+    layout:
+      forms:
+        columns: 2
+        order: [CustomerId, InvoiceDate, BillingAddress, BillingCity, BillingState, BillingCountry, BillingPostalCode, Total]
+      filters:
+        columns: 3
+        order: [BillingCountry, InvoiceDate, Total]
+    joins:
+      - { type: left, table: Customer, alias: c, on: Invoice.CustomerId = c.CustomerId }
+    columns:
+      InvoiceId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      CustomerId: { type: int, label: Customer, labelI18n: { en-US: Customer, zh-CN: 客户, ja-JP: 顧客 }, sortable: true }
+      CustomerName: { type: string, identity: true, label: Customer, labelI18n: { en-US: Customer, zh-CN: 客户, ja-JP: 顧客 }, expression: "c.LastName || ', ' || c.FirstName", searchable: true, sortable: true }
+      InvoiceDate: { type: date, label: Invoice Date, labelI18n: { en-US: Invoice Date, zh-CN: 发票日期, ja-JP: 請求日 }, searchable: false, sortable: true }
+      BillingCountry: { type: string, label: Billing Country, labelI18n: { en-US: Billing Country, zh-CN: 账单国家, ja-JP: 請求国 }, searchable: true, sortable: true }
+      Total: { type: decimal, label: Total, labelI18n: { en-US: Total, zh-CN: 总额, ja-JP: 合計 }, searchable: false, sortable: true }
+      BillingAddress: { type: textarea, hidden: true, label: Billing Address, labelI18n: { en-US: Billing Address, zh-CN: 地址, ja-JP: 住所 } }
+      BillingCity: { type: string, hidden: true, label: Billing City, labelI18n: { en-US: Billing City, zh-CN: 城市, ja-JP: 市区町村 } }
+      BillingState: { type: string, hidden: true, label: Billing State, labelI18n: { en-US: Billing State, zh-CN: 省州, ja-JP: 州/都道府県 } }
+      BillingPostalCode: { type: string, hidden: true, label: Billing Postal Code, labelI18n: { en-US: Billing Postal Code, zh-CN: 邮编, ja-JP: 郵便番号 } }
+    forms:
+      CustomerId:
+        type: int
+        label: Customer
+        labelI18n: { en-US: Customer, zh-CN: 客户, ja-JP: 顧客 }
+        editable: true
+        foreignKey: { entity: customer, displayColumn: LastName }
+      InvoiceDate: { type: date, label: Invoice Date, labelI18n: { en-US: Invoice Date, zh-CN: 发票日期, ja-JP: 請求日 }, editable: true }
+      BillingAddress: { type: textarea, label: Billing Address, labelI18n: { en-US: Billing Address, zh-CN: 地址, ja-JP: 住所 }, editable: true }
+      BillingCity: { type: string, label: Billing City, labelI18n: { en-US: Billing City, zh-CN: 城市, ja-JP: 市区町村 }, editable: true }
+      BillingState: { type: string, label: Billing State, labelI18n: { en-US: Billing State, zh-CN: 省州, ja-JP: 州/都道府県 }, editable: true }
+      BillingCountry: { type: string, label: Billing Country, labelI18n: { en-US: Billing Country, zh-CN: 账单国家, ja-JP: 請求国 }, editable: true }
+      BillingPostalCode: { type: string, label: Billing Postal Code, labelI18n: { en-US: Billing Postal Code, zh-CN: 邮编, ja-JP: 郵便番号 }, editable: true }
+      Total: { type: decimal, label: Total, labelI18n: { en-US: Total, zh-CN: 总额, ja-JP: 合計 }, editable: true }
+    filters:
+      BillingCountry: { type: multi-select, label: Billing Country, labelI18n: { en-US: Billing Country, zh-CN: 账单国家, ja-JP: 請求国 }, options: [USA, Canada, Brazil, France, Germany] }
+      InvoiceDate: { type: date-range, label: Invoice Date, labelI18n: { en-US: Invoice Date, zh-CN: 发票日期, ja-JP: 請求日 }, expression: Invoice.InvoiceDate }
+      Total: { type: range, label: Total Range, labelI18n: { en-US: Total Range, zh-CN: 总额范围, ja-JP: 合計範囲 }, expression: Invoice.Total }

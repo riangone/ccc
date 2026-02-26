@@ -1,0 +1,156 @@
+@model DynamicCrudSample.Controllers.DynamicListViewModel
+@{
+    var displayColumns = Model.Meta.Columns.Where(c => !c.Value.Hidden).ToList();
+}
+
+<div class="card bg-base-100 shadow">
+    <div class="card-body space-y-4">
+        <div class="flex items-center gap-2">
+            <span class="text-sm">Page Size:</span>
+            <select class="select select-bordered select-sm w-24"
+                    hx-get="@Url.Action("ListPartial")"
+                    hx-include="#filter-form"
+                    hx-target="#list-container"
+                    hx-swap="innerHTML"
+                    name="pageSize">
+                @foreach (var size in new[] { 1, 3, 5, 10, 20, 50 })
+                {
+                    <option value="@size" selected="@(Model.PageSize == size ? "selected" : null)">@size</option>
+                }
+            </select>
+            <input type="hidden" name="entity" value="@Model.Entity" />
+            <input type="hidden" name="search" value="@Model.Search" />
+            <input type="hidden" name="sort" value="@Model.Sort" />
+            <input type="hidden" name="dir" value="@Model.Dir" />
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+                <thead>
+                    <tr>
+                        @foreach (var col in displayColumns)
+                        {
+                            var name = col.Key;
+                            var def = col.Value;
+
+                            if (!def.Sortable)
+                            {
+                                <th>@def.GetLabel(name)</th>
+                            }
+                            else
+                            {
+                                var nextDir = (Model.Sort == name && Model.Dir != "desc") ? "desc" : "asc";
+                                <th>
+                                    <a class="link link-hover"
+                                       hx-get="@Url.Action("ListPartial", "DynamicEntity", new { entity = Model.Entity, search = Model.Search, sort = name, dir = nextDir })"
+                                       hx-include="#filter-form"
+                                       hx-target="#list-container"
+                                       hx-swap="innerHTML">
+                                        @def.GetLabel(name)
+                                        @(Model.Sort == name ? (Model.Dir == "desc" ? " v" : " ^") : "")
+                                    </a>
+                                </th>
+                            }
+                        }
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Items)
+                    {
+                        <tr>
+                            @foreach (var col in displayColumns)
+                            {
+                                var name = col.Key;
+                                var def = col.Value;
+
+                                object? value = null;
+                                try { value = ((IDictionary<string, object>)item)[name]; } catch { }
+
+                                <td>
+                                    @if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        @(value is bool b && b ? "Yes" : "No")
+                                    }
+                                    else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase) && value is DateTime dt)
+                                    {
+                                        @dt.ToString("yyyy-MM-dd")
+                                    }
+                                    else
+                                    {
+                                        @value
+                                    }
+                                </td>
+                            }
+                            <td class="text-right">
+                                <button class="btn btn-xs btn-outline"
+                                        hx-get="@Url.Action("EditForm", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key], mode = "modal" })"
+                                        hx-target="#modal-form-content"
+                                        hx-swap="innerHTML">
+                                    Edit
+                                </button>
+                                <a class="btn btn-xs btn-ghost"
+                                   href="@Url.Action("EditPage", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })">
+                                    Edit Page
+                                </a>
+                                <button class="btn btn-xs btn-error"
+                                        hx-post="@Url.Action("Delete", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })"
+                                        hx-target="#list-container"
+                                        hx-swap="innerHTML"
+                                        hx-confirm="Delete this item?">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @{
+            var totalPages = (int)Math.Ceiling(Model.Total / (double)Model.PageSize);
+            var current = Model.Page;
+            var maxPageLinks = 5;
+            var half = maxPageLinks / 2;
+            var startPage = Math.Max(1, current - half);
+            var endPage = Math.Min(totalPages, startPage + maxPageLinks - 1);
+            if (endPage - startPage + 1 < maxPageLinks)
+            {
+                startPage = Math.Max(1, endPage - maxPageLinks + 1);
+            }
+        }
+        @if (Model.Meta.Paging.Mode == "numbered" && totalPages > 1)
+        {
+            <div class="join">
+                <a class="join-item btn btn-sm @(current == 1 ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">First</a>
+                <a class="join-item btn btn-sm @(current == 1 ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current - 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Prev</a>
+                @for (int i = startPage; i <= endPage; i++)
+                {
+                    <a class="join-item btn btn-sm @(i == current ? "btn-primary" : "")"
+                       hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = i, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                       hx-include="#filter-form"
+                       hx-target="#list-container"
+                       hx-swap="innerHTML">@i</a>
+                }
+                <a class="join-item btn btn-sm @(current == totalPages ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = current + 1, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Next</a>
+                <a class="join-item btn btn-sm @(current == totalPages ? "btn-disabled" : "")"
+                   hx-get="@Url.Action("ListPartial", new { entity = Model.Entity, page = totalPages, search = Model.Search, sort = Model.Sort, dir = Model.Dir, pageSize = Model.PageSize })"
+                   hx-include="#filter-form"
+                   hx-target="#list-container"
+                   hx-swap="innerHTML">Last</a>
+            </div>
+        }
+    </div>
+</div>

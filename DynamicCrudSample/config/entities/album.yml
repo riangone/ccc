@@ -1,0 +1,36 @@
+entities:
+  album:
+    table: Album
+    key: AlbumId
+    displayName: Album
+    displayNameI18n:
+      en-US: Album
+      zh-CN: 专辑
+      ja-JP: アルバム
+    softDelete: false
+    paging: { pageSize: 10, mode: numbered }
+    layout:
+      forms: { columns: 2, order: [Title, ArtistId] }
+      filters: { columns: 2, order: [ArtistId] }
+    joins:
+      - { type: left, table: Artist, alias: a, on: Album.ArtistId = a.ArtistId }
+    columns:
+      AlbumId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      Title: { type: string, label: Title, labelI18n: { en-US: Title, zh-CN: 标题, ja-JP: タイトル }, searchable: true, sortable: true }
+      ArtistId: { type: int, label: Artist, labelI18n: { en-US: Artist, zh-CN: 艺术家, ja-JP: アーティスト }, sortable: true }
+      ArtistName: { type: string, identity: true, label: Artist, labelI18n: { en-US: Artist, zh-CN: 艺术家, ja-JP: アーティスト }, expression: a.Name, searchable: true, sortable: true }
+    forms:
+      Title: { type: string, label: Title, labelI18n: { en-US: Title, zh-CN: 标题, ja-JP: タイトル }, editable: true }
+      ArtistId:
+        type: int
+        label: Artist
+        labelI18n: { en-US: Artist, zh-CN: 艺术家, ja-JP: アーティスト }
+        editable: true
+        foreignKey: { entity: artist, displayColumn: Name }
+    filters:
+      ArtistId:
+        type: dropdown
+        label: Artist
+        labelI18n: { en-US: Artist, zh-CN: 艺术家, ja-JP: アーティスト }
+        expression: Album.ArtistId
+        foreignKey: { entity: artist, displayColumn: Name }
