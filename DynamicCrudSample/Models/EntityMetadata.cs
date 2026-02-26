@@ -1,3 +1,7 @@
+// ファイル概要: YAMLメタデータ構造（列・フォーム・フィルタ・レイアウト）を定義します。
+// このファイルはアプリの重要な構成要素を定義します。
+// 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
+
 namespace DynamicCrudSample.Models;
 
 public static class I18nText

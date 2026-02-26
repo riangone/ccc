@@ -1,3 +1,7 @@
+// ファイル概要: YAML定義からエンティティメタデータを読み込み提供します。
+// このファイルはアプリの重要な構成要素を定義します。
+// 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
+
 using DynamicCrudSample.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;

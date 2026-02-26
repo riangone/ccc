@@ -1,3 +1,7 @@
+// ファイル概要: ユーザー認証・作成・更新をDB経由で実行するサービス実装です。
+// このファイルはアプリの重要な構成要素を定義します。
+// 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
+
 using System.Data;
 using Dapper;
 using DynamicCrudSample.Models.Auth;
@@ -20,6 +24,7 @@ public class UserAuthService : IUserAuthService
 
     public async Task<AppUser?> ValidateCredentialsAsync(string userName, string password)
     {
+        // アクティブなユーザーのみを対象にパスワードハッシュ検証を行います。
         await using var conn = OpenConnection();
         var user = await conn.QueryFirstOrDefaultAsync<AppUser>(
             "SELECT * FROM AppUser WHERE UserName = @UserName AND IsActive = 1",
@@ -57,6 +62,7 @@ public class UserAuthService : IUserAuthService
 
     public async Task<int> CreateAsync(UserEditViewModel input, IDbConnection? connection = null, IDbTransaction? transaction = null)
     {
+        // 外部Txが渡された場合はその接続を使い、監査ログとの原子性を維持します。
         var ownConnection = connection == null;
         var conn = connection ?? OpenConnection();
         try
@@ -100,6 +106,7 @@ SELECT last_insert_rowid();";
 
     public async Task UpdateAsync(UserEditViewModel input, IDbConnection? connection = null, IDbTransaction? transaction = null)
     {
+        // パスワード未指定時は既存ハッシュを保持し、指定時のみ再ハッシュします。
         if (!input.Id.HasValue)
         {
             throw new InvalidOperationException("User id is required for update.");
@@ -154,6 +161,7 @@ WHERE Id = @Id", new
 
     private SqliteConnection OpenConnection()
     {
+        // 単独利用時の内部接続生成ヘルパー。
         var cs = _configuration.GetConnectionString("DefaultConnection") ?? "Data Source=chinook.db";
         var conn = new SqliteConnection(cs);
         conn.Open();

@@ -1,3 +1,7 @@
+// ファイル概要: 動的CRUDのSQL組み立て・検索・更新処理を提供するリポジトリ実装です。
+// このファイルはアプリの重要な構成要素を定義します。
+// 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
+
 using System.Data;
 using System.Globalization;
 using System.Text;
@@ -9,6 +13,7 @@ namespace DynamicCrudSample.Services;
 
 public interface IDynamicCrudRepository
 {
+    // 一覧取得: 通常ページング / count省略 / keysetカーソル方式をサポートします。
     Task<IEnumerable<dynamic>> GetAllAsync(
         string entity,
         string? search,
@@ -21,6 +26,7 @@ public interface IDynamicCrudRepository
         bool keyset = false,
         bool fetchOneExtra = false);
     Task<dynamic?> GetByIdAsync(string entity, object id);
+    // 登録系は監査ログ連携のため外部トランザクションを受け取れる設計です。
     Task<int> InsertAsync(string entity, IDictionary<string, object?> values, IDbTransaction? tx = null);
     Task<int> UpdateAsync(string entity, object id, IDictionary<string, object?> values, IDbTransaction? tx = null);
     Task<int> DeleteAsync(string entity, object id, IDbTransaction? tx = null);
@@ -56,6 +62,9 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         bool keyset = false,
         bool fetchOneExtra = false)
     {
+        // 1) メタデータを検証して、危険な識別子/式を拒否
+        // 2) WHERE句を共通ビルダで生成
+        // 3) modeに応じて numbered / keyset を切替
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         pageSize ??= meta.Paging.PageSize;
@@ -110,6 +119,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     public async Task<dynamic?> GetByIdAsync(string entity, object id)
     {
+        // 主キー単件取得。soft-delete設定時は削除済みレコードを除外します。
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         var sql = new StringBuilder();
@@ -125,6 +135,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     public async Task<int> InsertAsync(string entity, IDictionary<string, object?> values, IDbTransaction? tx = null)
     {
+        // identity列を除外してINSERT文を動的生成します。
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         var cols = meta.Columns
@@ -142,6 +153,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     public async Task<int> UpdateAsync(string entity, object id, IDictionary<string, object?> values, IDbTransaction? tx = null)
     {
+        // editable=falseのフォーム列は更新対象から除外します。
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         var fields = meta.Forms
@@ -161,6 +173,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     public async Task<int> DeleteAsync(string entity, object id, IDbTransaction? tx = null)
     {
+        // softDelete=trueなら論理削除、falseなら物理削除を実行します。
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         if (meta.SoftDelete)
@@ -186,6 +199,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     public async Task<int> CountAsync(string entity, string? search, Dictionary<string, string?>? filters = null)
     {
+        // 総件数取得。count=falseモード時はController側で呼び出しを抑止します。
         var meta = _meta.Get(entity);
         ValidateMetadata(meta, entity);
         var sql = $"SELECT COUNT(*) {BuildFromClause(meta)}";
@@ -207,6 +221,8 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         List<string> where,
         DynamicParameters param)
     {
+        // フィルタ型ごとのSQL変換:
+        // dropdown=一致, multi/checkbox=IN, range/date-range=境界条件
         if (filters == null)
         {
             return;
@@ -305,6 +321,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         Dictionary<string, string?>? filters,
         DynamicParameters param)
     {
+        // 検索条件 + フィルタ条件 + softDelete条件を一元的に合成します。
         var where = new List<string>();
         ApplyFilters(meta, filters, where, param);
 
@@ -344,6 +361,7 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     private static string BuildFromClause(EntityDefinition meta)
     {
+        // YAML定義のJOINを含めたFROM句を生成します。
         var parts = new List<string> { $"FROM {meta.Table}" };
         foreach (var j in meta.Joins)
         {
@@ -355,6 +373,8 @@ public class DynamicCrudRepository : IDynamicCrudRepository
 
     private static void ValidateMetadata(EntityDefinition meta, string entityName)
     {
+        // YAML由来メタデータの安全性チェック。
+        // SQL注入に繋がる文字や不正なトークンを事前に拒否します。
         static bool IsUnsafeToken(string value) =>
             value.Contains(';') || value.Contains("--") || value.Contains("/*") || value.Contains("*/");
 

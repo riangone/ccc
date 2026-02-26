@@ -3,6 +3,13 @@
 ## 2026-02-27
 
 ### Added
+1. Added detailed Japanese file-level comments across custom `.cs` and `.cshtml` files.
+2. Added detailed Japanese method-level comments in core backend files (`DynamicCrudRepository`, `DynamicEntityController`, `UserAuthService`).
+
+### Fixed
+1. Fixed Razor build issue caused by BOM before `@model` in `Views/Shared/Error.cshtml`.
+
+### Added
 1. Optional `count=false` query mode for large datasets to skip `COUNT(*)`.
 2. Keyset pagination support via cursor for high-volume list views.
 

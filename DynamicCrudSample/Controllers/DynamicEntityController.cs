@@ -1,3 +1,7 @@
+// ファイル概要: 動的エンティティの一覧・作成・編集・削除・部分更新を処理します。
+// このファイルはアプリの重要な構成要素を定義します。
+// 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
+
 using System.Data;
 using DynamicCrudSample.Models;
 using DynamicCrudSample.Services;
@@ -42,6 +46,7 @@ public class DynamicEntityController : Controller
         string? count = null,
         string? cursor = null)
     {
+        // 初期画面表示。メタデータから検索条件を解釈し、一覧表示モデルを構築します。
         var meta = _meta.Get(entity);
         pageSize ??= meta.Paging.PageSize;
         var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
@@ -86,6 +91,7 @@ public class DynamicEntityController : Controller
         string? count = null,
         string? cursor = null)
     {
+        // HTMXによる一覧部分更新。count有無・keyset有無をここで切り替えます。
         var meta = _meta.Get(entity);
         pageSize ??= meta.Paging.PageSize;
         var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
@@ -108,6 +114,7 @@ public class DynamicEntityController : Controller
 
     public async Task<IActionResult> CreateForm(string entity = "customer", string mode = "modal")
     {
+        // 新規作成フォームの描画（モーダル/ページ両対応）。
         var meta = _meta.Get(entity);
         var fkData = await LoadForeignKeyDataForm(meta);
         return PartialView("_Form", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), mode));
@@ -123,6 +130,7 @@ public class DynamicEntityController : Controller
     [HttpPost]
     public async Task<IActionResult> Create(string entity, [FromForm] Dictionary<string, string?> form, string mode = "modal")
     {
+        // 登録処理。CRUD本体と監査ログを同一トランザクションで実行します。
         var meta = _meta.Get(entity);
         var (values, errors) = ConvertAndValidate(meta, form, isEdit: false);
         var isPageMode = mode.Equals("page", StringComparison.OrdinalIgnoreCase);
@@ -153,6 +161,7 @@ public class DynamicEntityController : Controller
 
     public async Task<IActionResult> EditForm(string entity, int id, string mode = "modal")
     {
+        // 既存レコードを読み込み、編集フォームを返します。
         var meta = _meta.Get(entity);
         var item = await _repo.GetByIdAsync(entity, id);
         var fkData = await LoadForeignKeyDataForm(meta);
@@ -170,6 +179,7 @@ public class DynamicEntityController : Controller
     [HttpPost]
     public async Task<IActionResult> Edit(string entity, int id, [FromForm] Dictionary<string, string?> form, string mode = "modal")
     {
+        // 更新処理。登録同様に監査ログと整合性を取るためTx内で実行します。
         var meta = _meta.Get(entity);
         var (values, errors) = ConvertAndValidate(meta, form, isEdit: true);
         var isPageMode = mode.Equals("page", StringComparison.OrdinalIgnoreCase);
@@ -202,6 +212,7 @@ public class DynamicEntityController : Controller
     [HttpPost]
     public async Task<IActionResult> Delete(string entity, int id)
     {
+        // 削除処理（論理/物理はRepository側で自動分岐）。
         var meta = _meta.Get(entity);
         await ExecuteCrudTransactionAsync(async tx =>
         {
@@ -216,6 +227,7 @@ public class DynamicEntityController : Controller
     private (Dictionary<string, object?> values, Dictionary<string, string> errors)
         ConvertAndValidate(EntityDefinition meta, Dictionary<string, string?> form, bool isEdit)
     {
+        // YAMLの列定義に従って入力値を型変換し、エラーを収集します。
         var values = new Dictionary<string, object?>();
         var errors = new Dictionary<string, string>();
 
@@ -277,6 +289,7 @@ public class DynamicEntityController : Controller
 
     private Dictionary<string, string?> BuildFilters(EntityDefinition meta)
     {
+        // QueryStringからフィルタ値を抽出し、型ごとのキー形式へ正規化します。
         var filters = new Dictionary<string, string?>();
         foreach (var f in meta.Filters)
         {
@@ -311,6 +324,7 @@ public class DynamicEntityController : Controller
 
     private async Task ExecuteCrudTransactionAsync(Func<IDbTransaction, Task> action)
     {
+        // CRUD + Audit の原子性を担保するための共通Txラッパーです。
         if (_db.State != ConnectionState.Open)
         {
             _db.Open();
@@ -332,6 +346,7 @@ public class DynamicEntityController : Controller
 
     private static bool ResolveCountEnabled(EntityDefinition meta, string? count)
     {
+        // リクエスト明示値を優先し、未指定時はYAML設定(enableCount)を採用します。
         if (string.IsNullOrWhiteSpace(count))
         {
             return meta.Paging.EnableCount;
@@ -347,6 +362,7 @@ public class DynamicEntityController : Controller
         int pageSize,
         bool expectExtraRow)
     {
+        // +1件取得結果から hasMore / nextCursor を計算します。
         var list = rawItems.ToList();
         var hasMore = expectExtraRow && list.Count > pageSize;
         if (hasMore)
