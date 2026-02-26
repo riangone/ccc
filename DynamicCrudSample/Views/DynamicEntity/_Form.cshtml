@@ -1,7 +1,8 @@
 @using Microsoft.AspNetCore.Routing
 @model DynamicCrudSample.Controllers.DynamicFormViewModel
 @{
-    var isEdit = Model.Item != null;
+    var itemDict = Model.Item as IDictionary<string, object>;
+    var isEdit = itemDict != null;
     var action = isEdit ? "Edit" : "Create";
     var isPageMode = Model.Mode.Equals("page", StringComparison.OrdinalIgnoreCase);
     var formCols = Math.Clamp(Model.Meta.Layout.Forms.Columns, 1, 4);
@@ -9,9 +10,9 @@
     var orderedForms = Model.Meta.GetOrderedForms().ToList();
     var routeValues = new RouteValueDictionary();
     routeValues["entity"] = Model.Entity;
-    if (isEdit)
+    if (isEdit && itemDict != null && itemDict.TryGetValue(Model.Meta.Key, out var routeId))
     {
-        routeValues["id"] = (object)((IDictionary<string, object>)Model.Item)[Model.Meta.Key];
+        routeValues["id"] = routeId;
     }
 }
 
@@ -35,9 +36,9 @@
                     }
 
                     object? value = null;
-                    if (isEdit)
+                    if (isEdit && itemDict != null && itemDict.TryGetValue(name, out var rawValue))
                     {
-                        try { value = ((IDictionary<string, object>)Model.Item)[name]; } catch { }
+                        value = rawValue;
                     }
 
                     var label = def.GetLabel(name);
@@ -154,9 +155,9 @@
                     }
 
                     object? value = null;
-                    if (isEdit)
+                    if (isEdit && itemDict != null && itemDict.TryGetValue(name, out var rawValue))
                     {
-                        try { value = ((IDictionary<string, object>)Model.Item)[name]; } catch { }
+                        value = rawValue;
                     }
 
                     var label = def.GetLabel(name);
