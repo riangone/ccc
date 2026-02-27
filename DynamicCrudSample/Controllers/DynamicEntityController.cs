@@ -8,6 +8,7 @@ using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace DynamicCrudSample.Controllers;
 
@@ -51,7 +52,8 @@ public class DynamicEntityController : Controller
         string? dir = null,
         int? pageSize = null,
         string? count = null,
-        string? cursor = null)
+        string? cursor = null,
+        string? returnUrl = null)
     {
         // 初期画面表示。メタデータから検索条件を解釈し、一覧表示モデルを構築します。
         var meta = _meta.Get(entity);
@@ -75,7 +77,7 @@ public class DynamicEntityController : Controller
         var page = 1;
 
         return View("Index",
-            new DynamicListViewModel(
+            CreateListViewModel(
                 entity,
                 meta,
                 items,
@@ -90,7 +92,8 @@ public class DynamicEntityController : Controller
                 includeCount,
                 hasMore,
                 nextCursor,
-                cursor));
+                cursor,
+                returnUrl));
     }
 
     public async Task<IActionResult> ListPartial(
@@ -101,7 +104,8 @@ public class DynamicEntityController : Controller
         int page = 1,
         int? pageSize = null,
         string? count = null,
-        string? cursor = null)
+        string? cursor = null,
+        string? returnUrl = null)
     {
         // HTMXによる一覧部分更新。count有無・keyset有無をここで切り替えます。
         var meta = _meta.Get(entity);
@@ -124,9 +128,23 @@ public class DynamicEntityController : Controller
         var fkData = await LoadForeignKeyDataForm(meta);
 
         return PartialView("_List",
-            new DynamicListViewModel(
-                entity, meta, items, search, sort, dir, fkData, page, total, filters, pageSize.Value,
-                includeCount, hasMore, nextCursor, cursor));
+            CreateListViewModel(
+                entity,
+                meta,
+                items,
+                search,
+                sort,
+                dir,
+                fkData,
+                page,
+                total,
+                filters,
+                pageSize.Value,
+                includeCount,
+                hasMore,
+                nextCursor,
+                cursor,
+                returnUrl));
     }
 
     public async Task<IActionResult> CreateForm(string entity = "customer", string mode = "modal")
@@ -155,7 +173,7 @@ public class DynamicEntityController : Controller
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(string entity, [FromForm] Dictionary<string, string?> form, string mode = "modal")
+    public async Task<IActionResult> Create(string entity, [FromForm] Dictionary<string, string?> form, string mode = "modal", [FromForm] string? returnUrl = null)
     {
         // 登録処理。CRUD本体と監査ログを同一トランザクションで実行します。
         var meta = _meta.Get(entity);
@@ -188,7 +206,24 @@ public class DynamicEntityController : Controller
         var items = await _repo.GetAllAsync(entity, null, null, null);
         Response.Headers["HX-Retarget"] = "#list-container";
         Response.Headers["HX-Trigger"] = "entity-form-saved";
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
+        return PartialView("_List",
+            CreateListViewModel(
+                entity,
+                meta,
+                items,
+                null,
+                null,
+                null,
+                new(),
+                1,
+                total,
+                null,
+                5,
+                true,
+                false,
+                null,
+                null,
+                returnUrl));
     }
 
     public async Task<IActionResult> EditForm(string entity, int id, string mode = "modal")
@@ -219,7 +254,7 @@ public class DynamicEntityController : Controller
     }
 
     [HttpPost]
-    public async Task<IActionResult> Edit(string entity, int id, [FromForm] Dictionary<string, string?> form, string mode = "modal")
+    public async Task<IActionResult> Edit(string entity, int id, [FromForm] Dictionary<string, string?> form, string mode = "modal", [FromForm] string? returnUrl = null)
     {
         // 更新処理。登録同様に監査ログと整合性を取るためTx内で実行します。
         var meta = _meta.Get(entity);
@@ -253,11 +288,28 @@ public class DynamicEntityController : Controller
         var items = await _repo.GetAllAsync(entity, null, null, null);
         Response.Headers["HX-Retarget"] = "#list-container";
         Response.Headers["HX-Trigger"] = "entity-form-saved";
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
+        return PartialView("_List",
+            CreateListViewModel(
+                entity,
+                meta,
+                items,
+                null,
+                null,
+                null,
+                new(),
+                1,
+                total,
+                null,
+                5,
+                true,
+                false,
+                null,
+                null,
+                returnUrl));
     }
 
     [HttpPost]
-    public async Task<IActionResult> Delete(string entity, int id)
+    public async Task<IActionResult> Delete(string entity, int id, [FromForm] string? returnUrl = null)
     {
         // 削除処理（論理/物理はRepository側で自動分岐）。
         var meta = _meta.Get(entity);
@@ -273,7 +325,94 @@ public class DynamicEntityController : Controller
         });
         var total = await _repo.CountAsync(entity, null);
         var items = await _repo.GetAllAsync(entity, null, null, null);
-        return PartialView("_List", new DynamicListViewModel(entity, meta, items, null, null, null, new(), 1, total, null, 5, true, false, null, null));
+        return PartialView("_List",
+            CreateListViewModel(
+                entity,
+                meta,
+                items,
+                null,
+                null,
+                null,
+                new(),
+                1,
+                total,
+                null,
+                5,
+                true,
+                false,
+                null,
+                null,
+                returnUrl));
+    }
+
+    private DynamicListViewModel CreateListViewModel(
+        string entity,
+        EntityDefinition meta,
+        IEnumerable<dynamic> items,
+        string? search,
+        string? sort,
+        string? dir,
+        Dictionary<string, IEnumerable<dynamic>> fkData,
+        int page,
+        int total,
+        Dictionary<string, string?>? filters,
+        int pageSize,
+        bool includeCount,
+        bool hasMore,
+        string? nextCursor,
+        string? cursor,
+        string? returnUrl)
+    {
+        var returnEntity = ExtractEntityFromReturnUrl(returnUrl);
+        string? returnDisplayName = null;
+        if (!string.IsNullOrEmpty(returnEntity) && _meta.TryGet(returnEntity!, out var previousMeta))
+        {
+            returnDisplayName = previousMeta.GetDisplayName();
+        }
+
+        return new DynamicListViewModel(
+            entity,
+            meta,
+            items,
+            search,
+            sort,
+            dir,
+            fkData,
+            page,
+            total,
+            filters,
+            pageSize,
+            includeCount,
+            hasMore,
+            nextCursor,
+            cursor,
+            returnUrl,
+            returnEntity,
+            returnDisplayName);
+    }
+
+    private static string? ExtractEntityFromReturnUrl(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return null;
+        }
+
+        var queryStart = returnUrl.IndexOf('?');
+        var query = queryStart >= 0 ? returnUrl[(queryStart + 1)..] : returnUrl;
+        if (string.IsNullOrEmpty(query))
+        {
+            return null;
+        }
+
+        var parsed = QueryHelpers.ParseQuery(query);
+        if (parsed.TryGetValue("entity", out var entity) && !string.IsNullOrWhiteSpace(entity))
+        {
+            var firstValue = entity.ToString();
+            return firstValue;
+        }
+
+        return null;
     }
 
     private (Dictionary<string, object?> values, Dictionary<string, string> errors)
@@ -451,7 +590,10 @@ public record DynamicListViewModel(
     bool CountEnabled = true,
     bool HasMore = false,
     string? NextCursor = null,
-    string? Cursor = null);
+    string? Cursor = null,
+    string? ReturnUrl = null,
+    string? ReturnEntity = null,
+    string? ReturnDisplayName = null);
 
 public record DynamicFormViewModel(
     string Entity,

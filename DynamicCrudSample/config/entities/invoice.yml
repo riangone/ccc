@@ -15,7 +15,7 @@ entities:
         order: [CustomerId, InvoiceDate, BillingAddress, BillingCity, BillingState, BillingCountry, BillingPostalCode, Total]
       filters:
         columns: 3
-        order: [BillingCountry, InvoiceDate, Total]
+        order: [CustomerId, BillingCountry, InvoiceDate, Total]
     joins:
       - { type: left, table: Customer, alias: c, on: Invoice.CustomerId = c.CustomerId }
     columns:
@@ -44,6 +44,14 @@ entities:
       BillingPostalCode: { type: string, label: Billing Postal Code, labelI18n: { en-US: Billing Postal Code, zh-CN: 邮编, ja-JP: 郵便番号 }, editable: true }
       Total: { type: decimal, label: Total, labelI18n: { en-US: Total, zh-CN: 总额, ja-JP: 合計 }, editable: true }
     filters:
+      CustomerId:
+        type: dropdown
+        label: Customer
+        labelI18n: { en-US: Customer, zh-CN: 客户, ja-JP: 顧客 }
+        expression: Invoice.CustomerId
+        foreignKey:
+          entity: customer
+          displayColumn: LastName
       BillingCountry: { type: multi-select, label: Billing Country, labelI18n: { en-US: Billing Country, zh-CN: 账单国家, ja-JP: 請求国 }, options: [USA, Canada, Brazil, France, Germany] }
       InvoiceDate: { type: date-range, label: Invoice Date, labelI18n: { en-US: Invoice Date, zh-CN: 发票日期, ja-JP: 請求日 }, expression: Invoice.InvoiceDate }
       Total: { type: range, label: Total Range, labelI18n: { en-US: Total Range, zh-CN: 总额范围, ja-JP: 合計範囲 }, expression: Invoice.Total }

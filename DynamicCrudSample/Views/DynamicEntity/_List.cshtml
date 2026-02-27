@@ -2,9 +2,29 @@
    このビューは画面表示と操作導線を担当します。
    データバインディング名や hx-* 属性を変更する場合は、コントローラ側との整合を必ず確認してください。 *@
 
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Linq
 @model DynamicCrudSample.Controllers.DynamicListViewModel
+@inject DynamicCrudSample.Services.IEntityMetadataProvider EntityMetadataProvider
 @{
     var displayColumns = Model.Meta.Columns.Where(c => !c.Value.Hidden).ToList();
+    var baseIndexUrl = Url.Action("Index", "DynamicEntity") ?? "/";
+    var stateQuery = Context.Request.QueryString.HasValue ? Context.Request.QueryString.Value : string.Empty;
+    var currentStateUrl = string.IsNullOrEmpty(stateQuery) ? baseIndexUrl : baseIndexUrl + stateQuery;
+    var currentListUrl = Url.Action("Index", "DynamicEntity", new
+    {
+        entity = Model.Entity,
+        search = Model.Search,
+        sort = Model.Sort,
+        dir = Model.Dir,
+        pageSize = Model.PageSize,
+        count = Model.CountEnabled ? "true" : "false",
+        cursor = Model.Cursor,
+        returnUrl = Model.ReturnUrl,
+        returnEntity = Model.ReturnEntity,
+        returnDisplayName = Model.ReturnDisplayName
+    });
+    var currentReturnUrl = string.IsNullOrEmpty(currentListUrl) ? null : currentListUrl;
 }
 
 <div class="card bg-base-100 shadow">
@@ -29,6 +49,34 @@
             <input type="hidden" name="count" value="@(Model.CountEnabled ? "true" : "false")" />
             <input type="hidden" name="cursor" value="@Model.Cursor" />
         </div>
+
+        @{
+            // filter なし = エンティティレベルリンク（上部に表示）
+            var entityLevelLinks = Model.Meta.Links
+                .Where(l => l.Value.Filter == null || l.Value.Filter.Count == 0)
+                .ToList();
+        }
+        @if (entityLevelLinks.Count > 0)
+        {
+            <div class="flex flex-wrap items-center gap-2 mb-4 border-b pb-3 text-sm text-base-content/70">
+                <span class="font-semibold">他のエンティティへ</span>
+                @foreach (var entry in entityLevelLinks)
+                {
+                    var link = entry.Value;
+                    var linkParams = link.Query != null
+                        ? new Dictionary<string, string?>(link.Query)
+                        : new Dictionary<string, string?>();
+                    linkParams["entity"] = link.TargetEntity;
+                    linkParams["returnUrl"] = currentStateUrl;
+                    var href = QueryHelpers.AddQueryString(baseIndexUrl, linkParams
+                        .Where(kv => kv.Value != null)
+                        .ToDictionary(kv => kv.Key, kv => kv.Value!));
+                    <a class="btn btn-sm btn-outline" href="@href">
+                        @link.Label
+                    </a>
+                }
+            </div>
+        }
 
         <div class="overflow-x-auto">
             <table class="table table-zebra w-full">
@@ -64,48 +112,102 @@
                 <tbody>
                     @foreach (var item in Model.Items)
                     {
-                        <tr>
-                            @foreach (var col in displayColumns)
+                    <tr>
+                        @foreach (var col in displayColumns)
+                        {
+                            var name = col.Key;
+                            var def = col.Value;
+
+                            object? value = null;
+                            try { value = ((IDictionary<string, object>)item)[name]; } catch { }
+
+                            string formattedValue;
+                            if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
                             {
-                                var name = col.Key;
-                                var def = col.Value;
-
-                                object? value = null;
-                                try { value = ((IDictionary<string, object>)item)[name]; } catch { }
-
-                                <td>
-                                    @if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        @(value is bool b && b ? "Yes" : "No")
-                                    }
-                                    else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase) && value is DateTime dt)
-                                    {
-                                        @dt.ToString("yyyy-MM-dd")
-                                    }
-                                    else
-                                    {
-                                        @value
-                                    }
-                                </td>
+                                formattedValue = (value is bool b && b) ? "Yes" : "No";
                             }
+                            else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase) && value is DateTime dt)
+                            {
+                                formattedValue = dt.ToString("yyyy-MM-dd");
+                            }
+                            else
+                            {
+                                formattedValue = value?.ToString() ?? string.Empty;
+                            }
+
+                            var hasNavigableLink = def.ForeignKey != null
+                                && value != null
+                                && EntityMetadataProvider.TryGet(def.ForeignKey.Entity, out _);
+                            var targetUrl = hasNavigableLink
+                                ? Url.Action("Index", "DynamicEntity", new
+                                {
+                                    entity = def.ForeignKey.Entity,
+                                    returnUrl = currentReturnUrl,
+                                    returnEntity = Model.Entity,
+                                    returnDisplayName = Model.Meta.GetDisplayName()
+                                })
+                                : null;
+                            <td>
+                                @if (hasNavigableLink && targetUrl != null)
+                                {
+                                    <a class="link link-hover" href="@targetUrl">@formattedValue</a>
+                                }
+                                else
+                                {
+                                    @formattedValue
+                                }
+                            </td>
+                        }
                             <td class="text-right">
-                                <button class="btn btn-xs btn-outline"
-                                        hx-get="@Url.Action("EditForm", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key], mode = "modal" })"
-                                        hx-target="#modal-form-content"
-                                        hx-swap="innerHTML">
-                                    Edit
-                                </button>
-                                <a class="btn btn-xs btn-ghost"
-                                   href="@Url.Action("EditPage", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })">
-                                    Edit Page
-                                </a>
-                                <button class="btn btn-xs btn-error"
-                                        hx-post="@Url.Action("Delete", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })"
-                                        hx-target="#list-container"
-                                        hx-swap="innerHTML"
-                                        hx-confirm="Delete this item?">
-                                    Delete
-                                </button>
+                                <div class="flex flex-wrap gap-1 justify-end">
+                                    @{
+                                        // filter が設定されているリンクを行ごとに描画
+                                        var rowLinks = Model.Meta.Links
+                                            .Where(l => l.Value.Filter != null && l.Value.Filter.Count > 0)
+                                            .ToList();
+                                        var rowDict = item as IDictionary<string, object>;
+                                    }
+                                    @foreach (var linkEntry in rowLinks)
+                                    {
+                                        var rowLink = linkEntry.Value;
+                                        var rowLinkParams = rowLink.Query != null
+                                            ? new Dictionary<string, string?>(rowLink.Query)
+                                            : new Dictionary<string, string?>();
+                                        rowLinkParams["entity"] = rowLink.TargetEntity;
+                                        // 現在のページ状態（検索・ソート・フィルタ）を returnUrl に含めて遷移後に復元できるようにする
+                                        rowLinkParams["returnUrl"] = currentStateUrl;
+                                        foreach (var fkv in rowLink.Filter!)
+                                        {
+                                            if (rowDict != null && rowDict.TryGetValue(fkv.Value, out var rowVal))
+                                            {
+                                                rowLinkParams[fkv.Key] = rowVal?.ToString();
+                                            }
+                                        }
+                                        var rowLinkHref = QueryHelpers.AddQueryString(baseIndexUrl, rowLinkParams
+                                            .Where(kv => kv.Value != null)
+                                            .ToDictionary(kv => kv.Key, kv => kv.Value!));
+                                        <a class="btn btn-xs btn-secondary btn-outline" href="@rowLinkHref">
+                                            @rowLink.Label →
+                                        </a>
+                                    }
+                                    <button class="btn btn-xs btn-outline"
+                                            hx-get="@Url.Action("EditForm", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key], mode = "modal" })"
+                                            hx-target="#modal-form-content"
+                                            hx-swap="innerHTML">
+                                        Edit
+                                    </button>
+                                    <a class="btn btn-xs btn-ghost"
+                                       href="@Url.Action("EditPage", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })">
+                                        Edit Page
+                                    </a>
+                                    <button class="btn btn-xs btn-error"
+                                            hx-post="@Url.Action("Delete", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })"
+                                            hx-target="#list-container"
+                                            hx-swap="innerHTML"
+                                            hx-confirm="Delete this item?">
+                                        Delete
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     }

@@ -117,3 +117,12 @@ entities:
         foreignKey:
           entity: employee
           displayColumn: LastName
+    links:
+      employees:
+        label: Support Reps
+        targetEntity: employee
+      invoices:
+        label: Invoices
+        targetEntity: invoice
+        filter:
+          CustomerId: CustomerId

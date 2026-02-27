@@ -140,6 +140,7 @@ public class EntityDefinition
     public bool SoftDelete { get; set; }
     public bool IsPublic { get; set; } = true;
     public Dictionary<string, FilterDefinition> Filters { get; set; } = new();
+    public Dictionary<string, EntityLinkDefinition> Links { get; set; } = new();
 
     public string GetDisplayName() => I18nText.Resolve(DisplayNameI18n, DisplayName);
 
@@ -182,6 +183,17 @@ public class EntityDefinition
         result.AddRange(Filters.Where(f => result.All(x => x.Key != f.Key)));
         return result;
     }
+}
+
+public class EntityLinkDefinition
+{
+    public string Label { get; set; } = default!;
+    public string TargetEntity { get; set; } = default!;
+    // 静的クエリパラメータ（例: sort=Name）
+    public Dictionary<string, string>? Query { get; set; }
+    // 行ごとの動的フィルタ: targetQueryParam → sourceRowColumn
+    // 例: { "CustomerId": "CustomerId" } → 行の CustomerId 値を ?CustomerId=xxx として付与
+    public Dictionary<string, string>? Filter { get; set; }
 }
 
 public class EntityConfigRoot
