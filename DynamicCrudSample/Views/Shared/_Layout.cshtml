@@ -5,6 +5,7 @@
 @using DynamicCrudSample.Localization
 @using Microsoft.Extensions.Localization
 @inject IStringLocalizer<SharedResource> L
+@inject DynamicCrudSample.Services.IEntityMetadataProvider EntityMetadataProvider
 <!DOCTYPE html>
 <html lang="@System.Globalization.CultureInfo.CurrentUICulture.Name" data-theme="corporate">
 <head>
@@ -18,18 +19,27 @@
     <link rel="stylesheet" href="~/DynamicCrudSample.styles.css" asp-append-version="true" />
 </head>
 <body class="min-h-screen bg-base-200">
+    @{
+        var showSidebar = User.Identity?.IsAuthenticated ?? false;
+        var entityDefinitions = EntityMetadataProvider.GetAll()
+            .OrderBy(pair => pair.Value.GetDisplayName(), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
     <div class="drawer">
         <input id="app-sidebar" type="checkbox" class="drawer-toggle" />
 
         <div class="drawer-content flex flex-col min-h-screen">
             <header class="navbar bg-base-100 border-b border-base-300 px-3 lg:px-6">
-                <div class="flex-none">
-                    <label for="app-sidebar" class="btn btn-ghost btn-square">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                    </label>
-                </div>
+                @if (showSidebar)
+                {
+                    <div class="flex-none">
+                        <label for="app-sidebar" class="btn btn-ghost btn-square">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
+                        </label>
+                    </div>
+                }
 
                 <div class="flex-1">
                     <a class="btn btn-ghost text-xl" asp-controller="DynamicEntity" asp-action="Index">DynamicCrudSample</a>
@@ -103,35 +113,55 @@
             </main>
         </div>
 
-        <div class="drawer-side z-40">
-            <label for="app-sidebar" aria-label="close sidebar" class="drawer-overlay"></label>
-            <aside class="bg-base-100 w-72 min-h-full border-r border-base-300">
-                <div class="p-4 border-b border-base-300 flex items-center justify-between">
-                    <div>
-                        <div class="text-sm opacity-70">Navigation</div>
-                        <div class="font-semibold">Pages</div>
+        @if (showSidebar)
+        {
+            <div class="drawer-side z-40">
+                <label for="app-sidebar" aria-label="close sidebar" class="drawer-overlay"></label>
+                <aside class="bg-base-100 w-72 min-h-full border-r border-base-300">
+                    <div class="p-4 border-b border-base-300 flex items-center justify-between">
+                        <div>
+                            <div class="text-sm opacity-70">Navigation</div>
+                            <div class="font-semibold">Definitions</div>
+                        </div>
+                        <label for="app-sidebar" class="btn btn-ghost btn-sm btn-square" aria-label="close menu">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </label>
                     </div>
-                    <label for="app-sidebar" class="btn btn-ghost btn-sm btn-square" aria-label="close menu">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </label>
-                </div>
 
-                <ul class="menu p-3 gap-1">
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="customer">Customers</a></li>
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="employee">Employees</a></li>
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="artist">Artists</a></li>
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="album">Albums</a></li>
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="track">Tracks</a></li>
-                    <li><a asp-controller="DynamicEntity" asp-action="Index" asp-route-entity="invoice">Invoices</a></li>
-                    @if (User.IsInRole("Admin"))
-                    {
-                        <li class="mt-2"><a asp-controller="Users" asp-action="Index">@L["Users"]</a></li>
-                    }
-                </ul>
-            </aside>
-        </div>
+                    <ul class="menu p-3 gap-1">
+                        @foreach (var definition in entityDefinitions)
+                        {
+                            var isActive = string.Equals(
+                                Context.Request.RouteValues["controller"]?.ToString(),
+                                "DynamicEntity",
+                                StringComparison.OrdinalIgnoreCase) &&
+                                string.Equals(
+                                    Context.Request.Query["entity"],
+                                    definition.Key,
+                                    StringComparison.OrdinalIgnoreCase);
+
+                            <li>
+                                <a class="justify-between @(isActive ? "active" : "")"
+                                   asp-controller="DynamicEntity"
+                                   asp-action="Index"
+                                   asp-route-entity="@definition.Key">
+                                    <span>@definition.Value.GetDisplayName()</span>
+                                    <span class="badge badge-sm @(definition.Value.IsPublic ? "badge-success" : "badge-ghost")">
+                                        @(definition.Value.IsPublic ? "Public" : "Private")
+                                    </span>
+                                </a>
+                            </li>
+                        }
+                        @if (User.IsInRole("Admin"))
+                        {
+                            <li class="mt-2"><a asp-controller="Users" asp-action="Index">@L["Users"]</a></li>
+                        }
+                    </ul>
+                </aside>
+            </div>
+        }
     </div>
 
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>

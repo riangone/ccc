@@ -16,10 +16,15 @@
 ### Added
 1. Enforced push workflow note: update modification records before every push.
 
+### Added
+1. Added an `isPublic` flag on entity metadata so each YAML definition can opt into appearing in the authenticated sidebar menu.
+
 ### Changed
 1. Refactored dynamic form item access in [`Views/DynamicEntity/_Form.cshtml`](/Users/tt/Desktop/ws/ccc/DynamicCrudSample/Views/DynamicEntity/_Form.cshtml).
 2. Replaced repeated runtime cast/try-catch field reads with safe dictionary access (`TryGetValue`).
 3. Removed nullable-related build warnings from form rendering path.
+4. Sidebar navigation now waits for login, iterates every YAML definition, and shows a `Public`/`Private` badge plus active-state styling based on the new `isPublic` metadata.
+5. `Views/DynamicEntity/Index.cshtml` now renders breadcrumb navigation to keep the current entity context explicit.
 
 ### Verification
 1. `dotnet build` succeeded with `0 warning / 0 error`.

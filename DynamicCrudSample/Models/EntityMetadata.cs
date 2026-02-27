@@ -138,6 +138,7 @@ public class EntityDefinition
     public PagingDefinition Paging { get; set; } = new();
     public EntityLayoutDefinition Layout { get; set; } = new();
     public bool SoftDelete { get; set; }
+    public bool IsPublic { get; set; } = true;
     public Dictionary<string, FilterDefinition> Filters { get; set; } = new();
 
     public string GetDisplayName() => I18nText.Resolve(DisplayNameI18n, DisplayName);
