@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## 2026-02-27（Dashboardカードリンク・グラフ・データ拡充）
+
+### 追加
+
+#### 1. 統計カードのジャンプリンク
+
+各カードを `<a>` タグでラップし、クリックするとエンティティ一覧（`/DynamicEntity/Index?entity=xxx`）に遷移するようにしました。ホバー時にシャドウ＋スケールアップのアニメーションを追加。
+
+**変更ファイル:** `Controllers/DashboardController.cs`（`EntityUrl` プロパティ追加）、`Views/Dashboard/Index.cshtml`
+
+#### 2. Chart.js グラフ表示
+
+CDN（Chart.js 4.4.3）を `@section Scripts` でロードし、`config/dashboard.yml` の `charts` セクション定義に基づいてグラフを動的に描画します。
+
+| グラフ | 種別 | データ |
+|--------|------|--------|
+| Monthly Revenue | 折れ線 | Invoice SUM(Total) / 月別（strftime）過去24ヶ月 |
+| Tracks by Genre | ドーナツ | Track COUNT JOIN Genre / ジャンル別 Top 10 |
+| Top 10 Countries by Invoices | 棒グラフ | Invoice COUNT / 国別 Top 10 |
+| Top 10 Artists by Albums | 棒グラフ | Album COUNT JOIN Artist / アーティスト別 Top 10 |
+
+グラフ定義 YAML の主なフィールド:
+
+| フィールド | 説明 |
+|-----------|------|
+| `type` | `bar` / `line` / `doughnut` / `pie` |
+| `groupExpression` | GROUP BY に使う SQL 式（例: `strftime('%Y-%m', InvoiceDate)`） |
+| `labelJoinEntity` | FK 先エンティティを JOIN してラベルを取得 |
+| `colors` | `doughnut`/`pie` 用 RGBA カラーリスト |
+
+#### 3. 統計カードの拡充
+
+7種 → 12種に増加:
+
+| 追加カード | 説明 |
+|-----------|------|
+| Genres | ジャンル数（COUNT） |
+| Media Types | メディアタイプ数（COUNT） |
+| Playlists | プレイリスト数（COUNT） |
+| Invoice Lines | 請求明細数（COUNT） |
+| Avg Invoice | 平均請求額（AVG Total） |
+
+#### 4. `DashboardChartDefinition` モデル追加（`Models/DashboardConfig.cs`）
+
+グラフ定義を保持するクラス。`DashboardConfig.Charts` リストに格納されます。
+
+**主なプロパティ:**
+- `Type`, `Entity`, `ValueAggregate`, `ValueColumn`
+- `GroupExpression`（シンプル GROUP BY）
+- `LabelJoinEntity` / `LabelJoinKey` / `LabelJoinDisplay`（FK JOIN）
+- `OrderBy`, `OrderDir`, `Limit`
+- `ColorBg`, `ColorBorder`（単色）/ `Colors`（複数色リスト）
+
+#### 5. `DashboardChartViewModel` / `DashboardViewModel` 追加（`Controllers/DashboardController.cs`）
+
+- `DashboardChartViewModel`: タイトル・種別・ラベル JSON・値 JSON・色情報
+- `DashboardViewModel`: `Stats[]` + `Charts[]` をまとめた View モデル
+
+---
+
 ## 2026-02-27（Dashboard・URLリセット修正・パンくず修正）
 
 ### 追加

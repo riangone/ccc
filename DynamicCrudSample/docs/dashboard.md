@@ -2,90 +2,202 @@
 
 ## 概要
 
-`config/dashboard.yml` に統計定義を書くだけで、DB から集計した数値を Dashboard ページにカード形式で表示できます。コードの変更は不要です。
+`config/dashboard.yml` に統計・グラフ定義を書くだけで、Dashboard ページに統計カードとグラフが表示されます。コードの変更は不要です。
+
+- **統計カード**: クリックするとエンティティ一覧へ遷移
+- **グラフ**: Chart.js 4 を使用（棒・折れ線・ドーナツ・円グラフ）
+- **データ**: DB から集計（COUNT / SUM / AVG）
 
 ---
 
-## YAML 設定リファレンス（`config/dashboard.yml`）
+## YAML 設定リファレンス
+
+### stats セクション（統計カード）
 
 ```yaml
 stats:
-  - label: Artists             # 表示ラベル（デフォルト言語）
-    labelI18n:                 # ロケール別ラベル（省略可）
-      en-US: Artists
-      zh-CN: 艺术家
-      ja-JP: アーティスト
-    entity: artist             # entities.yml で定義したエンティティキー
-    aggregate: count           # count / sum / avg
-    icon: "🎵"                # アイコン絵文字（省略可）
-    color: badge-primary       # DaisyUI バッジカラークラス（省略可）
-
-  - label: Total Revenue
-    entity: invoice
-    aggregate: sum
-    column: Total              # sum / avg の場合は必須
-    icon: "💰"
-    color: badge-success
-
-  - label: Avg Track Length
-    entity: track
-    aggregate: avg
-    column: Milliseconds
-    filter: "Milliseconds > 0" # WHERE 句（省略可）
-    icon: "⏱️"
-    color: badge-info
+  - label: Total Revenue        # 表示ラベル（デフォルト言語）
+    labelI18n:                  # ロケール別ラベル（省略可）
+      en-US: Total Revenue
+      zh-CN: 总收入
+      ja-JP: 総売上
+    entity: invoice             # entities.yml で定義したエンティティキー
+    aggregate: sum              # count / sum / avg
+    column: Total               # sum / avg の場合は必須
+    filter: "Total > 0"         # WHERE 句（省略可）
+    icon: "💰"                  # アイコン絵文字（省略可）
+    color: badge-success        # DaisyUI バッジカラークラス（省略可）
 ```
-
-### 設定フィールド一覧
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|-----|:----:|------|
 | `label` | string | ✅ | デフォルト言語のラベル |
-| `labelI18n` | map | — | ロケール別ラベル。現在のロケールが見つかれば優先表示 |
-| `entity` | string | ✅ | `entities.yml` のエンティティキー名（テーブル情報を参照） |
-| `aggregate` | string | ✅ | `count` / `sum` / `avg` のいずれか |
-| `column` | string | ※ | `sum` / `avg` 時は必須。集計するカラム名 |
-| `filter` | string | — | SQL の WHERE 句（例: `IsDeleted = 0`） |
-| `icon` | string | — | 絵文字または文字。stat-figure として右上に表示 |
-| `color` | string | — | DaisyUI バッジカラークラス（例: `badge-primary`） |
-
-### サポートする集計種別
-
-| `aggregate` | 生成 SQL | 用途例 |
-|-------------|----------|--------|
-| `count` | `SELECT COUNT(*) FROM {Table}` | 件数表示 |
-| `sum` | `SELECT COALESCE(SUM({Column}), 0) FROM {Table}` | 売上合計・数量合計 |
-| `avg` | `SELECT COALESCE(AVG({Column}), 0) FROM {Table}` | 平均単価・平均評価 |
-
-`filter` が指定されている場合は `WHERE {Filter}` を末尾に追加します。
+| `labelI18n` | map | — | ロケール別ラベル（`en-US` / `zh-CN` / `ja-JP`） |
+| `entity` | string | ✅ | `entities.yml` のエンティティキー名 |
+| `aggregate` | string | ✅ | `count` / `sum` / `avg` |
+| `column` | string | ※ | `sum` / `avg` 時必須 |
+| `filter` | string | — | SQL WHERE 句 |
+| `icon` | string | — | 絵文字 |
+| `color` | string | — | DaisyUI バッジカラークラス |
 
 ---
 
-## 処理フロー
+### charts セクション（グラフ）
+
+```yaml
+charts:
+  # ── 折れ線グラフ（月別売上）────────────────────────────────────
+  - title: Monthly Revenue
+    titleI18n:
+      en-US: Monthly Revenue
+      ja-JP: 月別売上推移
+    type: line                              # bar / line / doughnut / pie
+    entity: invoice
+    valueAggregate: sum
+    valueColumn: Total
+    groupExpression: "strftime('%Y-%m', InvoiceDate)"  # GROUP BY 式
+    orderBy: label                          # label / value（既定: value）
+    orderDir: asc                           # asc / desc（既定: desc）
+    limit: 24
+    colorBg: "rgba(99, 102, 241, 0.15)"
+    colorBorder: "rgba(99, 102, 241, 1)"
+
+  # ── ドーナツグラフ（ジャンル別）────────────────────────────────
+  - title: Tracks by Genre
+    type: doughnut
+    entity: track
+    valueAggregate: count
+    labelJoinEntity: genre          # FK 先エンティティ（JOIN してラベルを取得）
+    labelJoinKey: GenreId           # 現テーブルの FK カラム
+    labelJoinDisplay: Name          # JOIN 先の表示カラム
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colors:                         # doughnut / pie 用カラーリスト
+      - "rgba(99, 102, 241, 0.85)"
+      - "rgba(16, 185, 129, 0.85)"
+      # ...
+
+  # ── 棒グラフ（国別）────────────────────────────────────────────
+  - title: Top 10 Countries by Invoices
+    type: bar
+    entity: invoice
+    valueAggregate: count
+    groupExpression: BillingCountry # カラム名をそのまま指定
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colorBg: "rgba(16, 185, 129, 0.7)"
+    colorBorder: "rgba(16, 185, 129, 1)"
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|:----:|------|
+| `title` | string | ✅ | グラフタイトル |
+| `titleI18n` | map | — | ロケール別タイトル |
+| `type` | string | ✅ | `bar` / `line` / `doughnut` / `pie` |
+| `entity` | string | ✅ | エンティティキー |
+| `valueAggregate` | string | ✅ | `count` / `sum` / `avg` |
+| `valueColumn` | string | ※ | `sum` / `avg` 時必須 |
+| `groupExpression` | string | ※ | GROUP BY 式（JOIN 未使用時必須） |
+| `labelJoinEntity` | string | — | FK JOIN で取得するラベルの元エンティティ |
+| `labelJoinKey` | string | — | 現テーブルの FK カラム名 |
+| `labelJoinDisplay` | string | — | JOIN 先の表示カラム名 |
+| `orderBy` | string | — | `label` / `value`（既定: `value`） |
+| `orderDir` | string | — | `asc` / `desc`（既定: `desc`） |
+| `limit` | int | — | 取得件数（既定: 10） |
+| `filter` | string | — | SQL WHERE 句 |
+| `colorBg` | string | — | 背景色（単色用） |
+| `colorBorder` | string | — | 枠線色（単色用） |
+| `colors` | list | — | `doughnut`/`pie` 用カラーリスト |
+
+---
+
+## アーキテクチャ
 
 ```
-起動時（Singleton 初期化）
-    config/dashboard.yml を読み込み → DashboardConfig オブジェクト化
-            │
-            ▼
+起動時（Singleton）
+config/dashboard.yml ──→ DashboardConfigProvider ──→ DashboardConfig
+                                                         ├── Stats[]
+                                                         └── Charts[]
+
 GET /Dashboard/Index
-    DashboardConfigProvider.GetConfig() → DashboardConfig.Stats[]
-            │
-            ▼
-    foreach stat in Stats:
-        1. _meta.TryGet(stat.Entity) で EntityMetadata 取得（なければスキップ）
-        2. aggregate に応じて SQL を組み立て
-        3. filter が指定されていれば WHERE 句を追加
-        4. db.ExecuteScalarAsync<object>(sql)
-        5. 型変換（decimal/double → "N2" 書式）
-        6. DashboardStatViewModel に追加
-            │
-            ▼
-    View("Index", stats)
-            │
-            ▼
-    Views/Dashboard/Index.cshtml
-        DaisyUI stat コンポーネントでカード表示
+        │
+        ├─ BuildStatsAsync()
+        │     foreach stat:
+        │       SQL = COUNT(*) / SUM(col) / AVG(col)
+        │       + WHERE filter
+        │       → ExecuteScalarAsync → FormatScalar → DashboardStatViewModel
+        │           EntityUrl = /DynamicEntity/Index?entity=xxx
+        │
+        └─ BuildChartsAsync()
+              foreach chart:
+                SQL = SELECT {group} as label, {aggregate} as value
+                      FROM {table}
+                      [JOIN {joinTable} j ON ...]
+                      [WHERE {filter}]
+                      GROUP BY {group}
+                      ORDER BY {col} {dir} LIMIT {n}
+                → QueryAsync → labels[] + values[] → JSON serialize
+                → DashboardChartViewModel
+
+        DashboardViewModel { Stats[], Charts[] }
+                │
+                ▼
+        Views/Dashboard/Index.cshtml
+          ├── stat cards (<a> link → entity list)
+          └── <canvas> × N
+                │
+                ▼
+        @section Scripts
+          Chart.js 4.4.3 (CDN)
+          new Chart(ctx, { type, labels, values, colors, ... })
+```
+
+---
+
+## グラフのSQL生成ルール
+
+### シンプル GROUP BY（`groupExpression` 使用）
+
+```sql
+SELECT {groupExpression} AS label, {valueExpr} AS value
+FROM {Table}
+[WHERE {filter}]
+GROUP BY {groupExpression}
+ORDER BY {orderBy} {orderDir}
+LIMIT {limit}
+```
+
+例（月別売上）:
+```sql
+SELECT strftime('%Y-%m', InvoiceDate) AS label, SUM(Total) AS value
+FROM Invoice
+GROUP BY strftime('%Y-%m', InvoiceDate)
+ORDER BY label ASC
+LIMIT 24
+```
+
+### FK JOIN（`labelJoinEntity` 使用）
+
+```sql
+SELECT j.{LabelJoinDisplay} AS label, {valueExpr} AS value
+FROM {Table}
+JOIN {JoinTable} j ON {Table}.{LabelJoinKey} = j.{JoinPK}
+[WHERE {filter}]
+GROUP BY j.{LabelJoinDisplay}
+ORDER BY {orderBy} {orderDir}
+LIMIT {limit}
+```
+
+例（ジャンル別トラック数）:
+```sql
+SELECT j.Name AS label, COUNT(*) AS value
+FROM Track
+JOIN Genre j ON Track.GenreId = j.GenreId
+GROUP BY j.Name
+ORDER BY value DESC
+LIMIT 10
 ```
 
 ---
@@ -95,80 +207,80 @@ GET /Dashboard/Index
 ```
 DynamicCrudSample/
 ├── config/
-│   └── dashboard.yml                     # 統計定義 YAML
+│   └── dashboard.yml                     # stats + charts 定義
 ├── Models/
 │   └── DashboardConfig.cs                # DashboardConfig / DashboardStatDefinition
+│                                         # DashboardChartDefinition
 ├── Services/
-│   └── DashboardConfigProvider.cs        # IDashboardConfigProvider + 実装
+│   └── DashboardConfigProvider.cs        # IDashboardConfigProvider + 実装（Singleton）
 ├── Controllers/
-│   └── DashboardController.cs            # 集計クエリ実行・ViewModel 組み立て
+│   └── DashboardController.cs            # DashboardStatViewModel / DashboardChartViewModel
+│                                         # DashboardViewModel / DashboardController
 └── Views/
     └── Dashboard/
-        └── Index.cshtml                  # 統計カード表示
+        └── Index.cshtml                  # カードグリッド + Chart.js 初期化
 ```
 
 ---
 
-## DI 登録（`Program.cs`）
+## デフォルトグラフ一覧
 
-```csharp
-builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>();
-```
-
-`DashboardConfigProvider` は起動時に YAML を一度だけ読み込む Singleton です。
-
----
-
-## 統計カードの見た目（DaisyUI stat コンポーネント）
-
-```
-┌─────────────────────────────────┐
-│  🎵                             │
-│  アーティスト          (icon)   │
-│  275                            │
-│  [Artists] (badge)              │
-└─────────────────────────────────┘
-```
-
-DaisyUI の `stat` / `stat-title` / `stat-value` / `stat-figure` / `stat-desc` クラスを使用しています。
+| グラフ | 種別 | エンティティ | 集計 | 備考 |
+|-------|------|------------|------|------|
+| Monthly Revenue | `line` | invoice | SUM(Total) | strftime 月別・24ヶ月 |
+| Tracks by Genre | `doughnut` | track | COUNT | Genre JOIN |
+| Top 10 Countries by Invoices | `bar` | invoice | COUNT | BillingCountry 別 |
+| Top 10 Artists by Albums | `bar` | album | COUNT | Artist JOIN |
 
 ---
 
-## 新しい統計を追加する手順
+## デフォルト統計カード一覧（12種）
 
-1. `config/dashboard.yml` に新しいエントリを追加するだけです
+| カード | 集計 | アイコン |
+|-------|------|--------|
+| Artists | COUNT | 🎵 |
+| Albums | COUNT | 💿 |
+| Tracks | COUNT | 🎸 |
+| Genres | COUNT | 🎼 |
+| Media Types | COUNT | 📀 |
+| Playlists | COUNT | 📋 |
+| Customers | COUNT | 👥 |
+| Employees | COUNT | 🧑‍💼 |
+| Invoices | COUNT | 📄 |
+| Invoice Lines | COUNT | 🧾 |
+| Total Revenue | SUM(Total) | 💰 |
+| Avg Invoice | AVG(Total) | 📊 |
+
+---
+
+## 新しいグラフを追加する手順
+
+`config/dashboard.yml` の `charts` セクションにエントリを追加するだけです。
 
 ```yaml
-stats:
-  # 既存の統計 ...
+charts:
+  # 既存グラフ ...
 
-  # 追加例: プレイリスト数
-  - label: Playlists
-    labelI18n:
-      en-US: Playlists
-      zh-CN: 播放列表
-      ja-JP: プレイリスト
-    entity: playlist
-    aggregate: count
-    icon: "📋"
-    color: badge-warning
+  # 追加例: メディアタイプ別トラック数（円グラフ）
+  - title: Tracks by Media Type
+    type: pie
+    entity: track
+    valueAggregate: count
+    labelJoinEntity: mediatype
+    labelJoinKey: MediaTypeId
+    labelJoinDisplay: Name
+    orderBy: value
+    orderDir: desc
+    limit: 5
+    colors:
+      - "rgba(99, 102, 241, 0.85)"
+      - "rgba(16, 185, 129, 0.85)"
+      - "rgba(245, 158, 11, 0.85)"
+      - "rgba(239, 68, 68, 0.85)"
+      - "rgba(59, 130, 246, 0.85)"
 ```
 
-2. アプリを再起動すると新しいカードが表示されます（コード変更不要）
-
----
-
-## デフォルト統計一覧（`config/dashboard.yml` 初期値）
-
-| カード | エンティティ | 集計 | アイコン |
-|-------|------------|------|--------|
-| Artists | artist | COUNT | 🎵 |
-| Albums | album | COUNT | 💿 |
-| Tracks | track | COUNT | 🎸 |
-| Customers | customer | COUNT | 👥 |
-| Invoices | invoice | COUNT | 📄 |
-| Total Revenue | invoice | SUM(Total) | 💰 |
-| Employees | employee | COUNT | 🧑‍💼 |
+アプリを再起動すると新しいグラフが表示されます（コード変更不要）。
 
 ---
 
@@ -176,8 +288,9 @@ stats:
 
 | 項目 | 説明 |
 |------|------|
-| entity の存在確認 | 存在しない entity を指定した場合はその統計をスキップします |
-| SQL エラー | 集計クエリが失敗した場合はスキップします（Dashboard 全体はクラッシュしません） |
-| filter のセキュリティ | `filter` は SQL に直接埋め込まれます。YAML ファイルのアクセス権を適切に管理してください |
-| sum/avg の column 省略 | `column` が未指定の場合はその統計をスキップします |
-| 数値フォーマット | `decimal` / `double` / `float` は `"N2"` 書式（例: `1,234.56`）で表示します |
+| エンティティ存在確認 | 存在しない entity を指定した場合はスキップ |
+| SQL エラー | 集計・グラフクエリが失敗した場合はスキップ |
+| `filter` のセキュリティ | SQL に直接埋め込まれます。YAML のアクセス権を適切に管理してください |
+| SQLite と SQL Server の互換性 | `groupExpression` に `strftime` を使うと SQLite 専用になります。SQL Server の場合は `FORMAT(col, 'yyyy-MM')` など方言に合わせた式を使用してください |
+| 数値フォーマット | `sum` / `avg` は `"N2"` 書式（例: `1,234.56`）で表示 |
+| Chart.js バージョン | 4.4.3（CDN）。オフライン環境では `wwwroot/js/` にダウンロードして参照先を変更してください |

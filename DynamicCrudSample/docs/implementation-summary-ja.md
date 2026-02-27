@@ -540,21 +540,28 @@ HTMX フォームの `submit` イベントで `evt.preventDefault()` を呼ん�
 
 ---
 
-## 20. Dashboard 機能（YAML 定義統計カード）
+## 20. Dashboard 機能（YAML 定義統計カード・グラフ）
 
 ### 20.1 概要
 
-アプリのトップページを **Dashboard** に変更しました。`config/dashboard.yml` に統計定義を書くだけで、DB から集計した数値をカード形式でリアルタイムに表示できます。コードの変更は不要です。
+アプリのトップページを **Dashboard** に変更しました。`config/dashboard.yml` に統計・グラフ定義を書くだけで、DB から集計した数値をカード＋グラフで表示できます。コードの変更は不要です。
+
+| 機能 | 説明 |
+|------|------|
+| 統計カード | クリックするとエンティティ一覧へ遷移（12種類） |
+| グラフ | Chart.js 4.4.3（棒・折れ線・ドーナツ、4種類） |
+
+詳細は `docs/dashboard.md` を参照してください。
 
 ### 20.2 新規ファイル一覧
 
 | ファイル | 役割 |
 |---------|------|
-| `Models/DashboardConfig.cs` | `DashboardConfig`（ルートモデル）/ `DashboardStatDefinition`（統計定義クラス） |
-| `Services/DashboardConfigProvider.cs` | `IDashboardConfigProvider` インターフェースと実装（YAML ローダー） |
-| `Controllers/DashboardController.cs` | 統計集計クエリを実行し、View モデルを組み立てるコントローラー |
-| `Views/Dashboard/Index.cshtml` | 統計カードを DaisyUI stat コンポーネントで表示 |
-| `config/dashboard.yml` | 統計定義 YAML（デフォルト設定） |
+| `Models/DashboardConfig.cs` | `DashboardConfig` / `DashboardStatDefinition` / `DashboardChartDefinition` |
+| `Services/DashboardConfigProvider.cs` | `IDashboardConfigProvider` インターフェースと実装（YAML ローダー・Singleton） |
+| `Controllers/DashboardController.cs` | 統計・グラフ集計クエリ実行、`DashboardViewModel` 組み立て |
+| `Views/Dashboard/Index.cshtml` | カードグリッド（リンク付き）＋ Chart.js グラフ |
+| `config/dashboard.yml` | 統計（12種）＋グラフ（4種）定義 |
 
 ### 20.3 アーキテクチャ
 
@@ -563,16 +570,17 @@ config/dashboard.yml
         │  起動時に読み込み（Singleton）
         ▼
 DashboardConfigProvider
-        │  GetConfig() → DashboardConfig.Stats[]
+        │  GetConfig() → DashboardConfig { Stats[], Charts[] }
         ▼
 DashboardController.Index()
-        │  foreach stat → SQL 組み立て・実行
-        │    COUNT(*) / SUM(column) / AVG(column)
+        ├─ BuildStatsAsync()   → DashboardStatViewModel[] (EntityUrl付き)
+        └─ BuildChartsAsync()  → DashboardChartViewModel[] (LabelsJson/ValuesJson)
         ▼
-List<DashboardStatViewModel>
-        │
+DashboardViewModel { Stats[], Charts[] }
         ▼
-Views/Dashboard/Index.cshtml  →  stat カード × N 枚
+Views/Dashboard/Index.cshtml
+  ├── stat カード × N（<a>リンク → エンティティ一覧）
+  └── <canvas> × M（Chart.js 4.4.3 初期化）
 ```
 
 ### 20.4 モデル定義（`Models/DashboardConfig.cs`）
@@ -580,21 +588,45 @@ Views/Dashboard/Index.cshtml  →  stat カード × N 枚
 ```csharp
 public class DashboardConfig
 {
-    public List<DashboardStatDefinition> Stats { get; set; } = new();
+    public List<DashboardStatDefinition>  Stats  { get; set; } = new();
+    public List<DashboardChartDefinition> Charts { get; set; } = new();
 }
 
 public class DashboardStatDefinition
 {
     public string Label { get; set; } = "";
     public Dictionary<string, string> LabelI18n { get; set; } = new();
-    public string Entity    { get; set; } = "";    // entities.yml のキー名と一致
+    public string Entity    { get; set; } = "";    // entities.yml のキーと一致
     public string Aggregate { get; set; } = "count"; // count / sum / avg
-    public string? Column   { get; set; }          // sum / avg の集計対象カラム
+    public string? Column   { get; set; }          // sum / avg の対象カラム
     public string? Filter   { get; set; }          // WHERE 句（任意）
     public string? Icon     { get; set; }          // 絵文字アイコン
     public string? Color    { get; set; }          // DaisyUI バッジクラス
+    public string GetLabel() { ... }               // 現在ロケールのラベルを返す
+}
 
-    public string GetLabel()  // 現在ロケールに対応するラベルを返す
+public class DashboardChartDefinition
+{
+    public string Title      { get; set; } = "";
+    public Dictionary<string, string> TitleI18n { get; set; } = new();
+    public string Type       { get; set; } = "bar";  // bar/line/doughnut/pie
+    public string Entity     { get; set; } = "";
+    public string ValueAggregate  { get; set; } = "count";
+    public string? ValueColumn    { get; set; }
+    public string? GroupExpression { get; set; }     // GROUP BY 式
+    // FK JOIN でラベル取得
+    public string? LabelJoinEntity  { get; set; }
+    public string? LabelJoinKey     { get; set; }
+    public string? LabelJoinDisplay { get; set; }
+    public string? OrderBy  { get; set; }   // label / value
+    public string? OrderDir { get; set; }   // asc / desc
+    public int     Limit    { get; set; } = 10;
+    public string? Filter   { get; set; }
+    // 色設定
+    public string? ColorBg     { get; set; }
+    public string? ColorBorder { get; set; }
+    public List<string>? Colors { get; set; }  // doughnut/pie 用
+    public string GetTitle() { ... }
 }
 ```
 
@@ -647,35 +679,72 @@ stats:
 
 ### 20.6 コントローラーの集計ロジック（`Controllers/DashboardController.cs`）
 
-各統計定義について以下の SQL を動的に組み立て、Dapper の `ExecuteScalarAsync` で実行します。
+#### 統計カード（`BuildStatsAsync`）
 
 ```csharp
 // count
-"SELECT COUNT(*) FROM {meta.Table}"
+"SELECT COUNT(*) FROM {meta.Table} [WHERE {filter}]"
 
 // sum
-"SELECT COALESCE(SUM({stat.Column}), 0) FROM {meta.Table}"
+"SELECT COALESCE(SUM({col}), 0) FROM {meta.Table} [WHERE {filter}]"
 
 // avg
-"SELECT COALESCE(AVG({stat.Column}), 0) FROM {meta.Table}"
-
-// filter がある場合は末尾に WHERE を追加
-sql += $" WHERE {stat.Filter}";
+"SELECT COALESCE(AVG({col}), 0) FROM {meta.Table} [WHERE {filter}]"
 ```
 
-- `entity` に対応するメタデータが見つからない場合はその統計をスキップ
-- SQL 実行が失敗した場合もスキップ（ダッシュボード全体がクラッシュしない）
-- `decimal` / `double` / `float` は `"N2"` 書式（カンマ区切り小数2桁）で表示
+- `EntityUrl = Url.Action("Index", "DynamicEntity", new { entity })` をセット（カードのリンク先）
+- SQL 失敗 / entity 未定義の場合はスキップ
 
-### 20.7 DI 登録（`Program.cs`）
+#### グラフ（`BuildChartsAsync`）
+
+**シンプル GROUP BY**（`groupExpression` 使用）:
+```sql
+SELECT {groupExpression} AS label, {aggregate} AS value
+FROM {Table} [WHERE {filter}]
+GROUP BY {groupExpression}
+ORDER BY {orderBy} {orderDir} LIMIT {limit}
+```
+
+**FK JOIN**（`labelJoinEntity` 使用）:
+```sql
+SELECT j.{LabelJoinDisplay} AS label, {aggregate} AS value
+FROM {Table}
+JOIN {JoinTable} j ON {Table}.{LabelJoinKey} = j.{JoinPK}
+[WHERE {filter}]
+GROUP BY j.{LabelJoinDisplay}
+ORDER BY {orderBy} {orderDir} LIMIT {limit}
+```
+
+クエリ結果は `System.Text.Json.JsonSerializer.Serialize` でラベル・値をそれぞれ JSON 配列化し、`LabelsJson` / `ValuesJson` として View に渡します。
+
+### 20.7 グラフ描画（`Views/Dashboard/Index.cshtml`）
+
+Chart.js 4.4.3 を CDN からロード（`@section Scripts` 内）。各グラフ定義について `<canvas id="chart-@i">` を生成し、インライン `<script>` で初期化します。
+
+```javascript
+new Chart(ctx, {
+    type: 'bar' | 'line' | 'doughnut' | 'pie',
+    data: {
+        labels: @Html.Raw(chart.LabelsJson),
+        datasets: [{ data: @Html.Raw(chart.ValuesJson), ... }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ... }
+});
+```
+
+- 単色グラフ（棒・折れ線）: `colorBg` / `colorBorder` を使用
+- 複数色グラフ（ドーナツ・円）: `colors` リストを `colorsJson` として渡す
+- Y 軸は 1000 以上を `k` 単位表示（例: `2.3k`）
+
+### 20.8 DI 登録（`Program.cs`）
 
 ```csharp
 builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>();
 ```
 
-`DashboardConfigProvider` は起動時に `config/dashboard.yml` を一度だけ読み込み、Singleton として保持します。YAML ファイルが存在しない場合は空の統計リストで動作します。
+`DashboardConfigProvider` は起動時に `config/dashboard.yml` を一度だけ読み込む Singleton です。
 
-### 20.8 デフォルトルート変更
+### 20.9 デフォルトルート変更
 
 ```csharp
 // Program.cs（変更後）
