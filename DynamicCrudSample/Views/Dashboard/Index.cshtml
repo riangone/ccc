@@ -1,41 +1,176 @@
-@* ファイル概要: ダッシュボード画面。config/dashboard.yml で定義した統計カードを表示します。
-   このビューは画面表示と操作導線を担当します。
-   統計項目の追加・変更は config/dashboard.yml を編集してください。 *@
+@* ファイル概要: ダッシュボード画面。
+   統計カード（クリックでエンティティ一覧へ遷移）とグラフ（Chart.js）を表示します。
+   統計・グラフの追加・変更は config/dashboard.yml を編集してください。 *@
 
-@model List<DynamicCrudSample.Controllers.DashboardStatViewModel>
+@model DynamicCrudSample.Controllers.DashboardViewModel
 @{
     ViewData["Title"] = "Dashboard";
 }
 
-<div class="space-y-6">
+<div class="space-y-8">
     <h1 class="text-2xl font-bold">Dashboard</h1>
 
-    @if (Model != null && Model.Count > 0)
+    {{!-- ════════════════════════════════════════════
+         統計カード（クリックでエンティティ一覧へ）
+    ═════════════════════════════════════════════ --}}
+    @if (Model.Stats.Count > 0)
     {
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            @foreach (var stat in Model)
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            @foreach (var stat in Model.Stats)
             {
-                <div class="stat bg-base-100 shadow rounded-box">
-                    @if (!string.IsNullOrEmpty(stat.Icon))
-                    {
-                        <div class="stat-figure text-4xl">@stat.Icon</div>
-                    }
-                    <div class="stat-title text-xs">@stat.Label</div>
-                    <div class="stat-value text-2xl">@stat.Value</div>
-                    @if (!string.IsNullOrEmpty(stat.Color))
-                    {
-                        <div class="stat-desc">
-                            <span class="badge @stat.Color badge-sm">@stat.Label</span>
-                        </div>
-                    }
-                </div>
+                @if (!string.IsNullOrEmpty(stat.EntityUrl))
+                {
+                    <a href="@stat.EntityUrl"
+                       class="stat bg-base-100 shadow rounded-box hover:shadow-lg hover:scale-105 transition-all duration-150 cursor-pointer no-underline">
+                        @if (!string.IsNullOrEmpty(stat.Icon))
+                        {
+                            <div class="stat-figure text-3xl">@stat.Icon</div>
+                        }
+                        <div class="stat-title text-xs opacity-70">@stat.Label</div>
+                        <div class="stat-value text-xl">@stat.Value</div>
+                        @if (!string.IsNullOrEmpty(stat.Color))
+                        {
+                            <div class="stat-desc mt-1">
+                                <span class="badge @stat.Color badge-xs">@stat.Label</span>
+                            </div>
+                        }
+                    </a>
+                }
+                else
+                {
+                    <div class="stat bg-base-100 shadow rounded-box">
+                        @if (!string.IsNullOrEmpty(stat.Icon))
+                        {
+                            <div class="stat-figure text-3xl">@stat.Icon</div>
+                        }
+                        <div class="stat-title text-xs opacity-70">@stat.Label</div>
+                        <div class="stat-value text-xl">@stat.Value</div>
+                        @if (!string.IsNullOrEmpty(stat.Color))
+                        {
+                            <div class="stat-desc mt-1">
+                                <span class="badge @stat.Color badge-xs">@stat.Label</span>
+                            </div>
+                        }
+                    </div>
+                }
             }
         </div>
     }
     else
     {
         <div class="alert alert-info">
-            <span>統計情報が設定されていません。<code>config/dashboard.yml</code> に統計定義を追加してください。</span>
+            <span>統計情報が設定されていません。<code>config/dashboard.yml</code> の <code>stats</code> セクションに定義を追加してください。</span>
+        </div>
+    }
+
+    {{!-- ════════════════════════════════════════════
+         グラフ
+    ═════════════════════════════════════════════ --}}
+    @if (Model.Charts.Count > 0)
+    {
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            @for (int i = 0; i < Model.Charts.Count; i++)
+            {
+                var chart = Model.Charts[i];
+                <div class="card bg-base-100 shadow">
+                    <div class="card-body">
+                        <h2 class="card-title text-base">@chart.Title</h2>
+                        <div class="relative" style="height:280px">
+                            <canvas id="chart-@i"></canvas>
+                        </div>
+                    </div>
+                </div>
+            }
         </div>
     }
 </div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script>
+        // Chart.js グローバル設定
+        Chart.defaults.font.family = "'Inter', 'Helvetica Neue', sans-serif";
+        Chart.defaults.font.size = 12;
+        Chart.defaults.color = 'rgba(100,116,139,0.9)';
+
+        @for (int i = 0; i < Model.Charts.Count; i++)
+        {
+            var c = Model.Charts[i];
+            var isMultiColor = c.ColorsJson != null;
+            var colorBg     = c.ColorBg ?? "rgba(99,102,241,0.6)";
+            var colorBorder = c.ColorBorder ?? "rgba(99,102,241,1)";
+        <text>
+        (function() {
+            var ctx = document.getElementById('chart-@i');
+            if (!ctx) return;
+            var labels = @Html.Raw(c.LabelsJson);
+            var values = @Html.Raw(c.ValuesJson);
+            var type   = '@c.Type';
+
+            var dataset = {
+                data: values,
+                borderWidth: type === 'line' ? 2 : 1,
+            };
+
+            @if (isMultiColor)
+            {
+                <text>
+            dataset.backgroundColor = @Html.Raw(c.ColorsJson!);
+            dataset.borderColor     = @Html.Raw(c.ColorsJson!.Replace("0.85", "1"));
+                </text>
+            }
+            else
+            {
+                <text>
+            dataset.backgroundColor = '@colorBg';
+            dataset.borderColor     = '@colorBorder';
+            dataset.fill            = type === 'line';
+            dataset.tension         = 0.35;
+                </text>
+            }
+
+            new Chart(ctx, {
+                type: type,
+                data: { labels: labels, datasets: [dataset] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: type === 'doughnut' || type === 'pie',
+                            position: 'bottom',
+                            labels: { boxWidth: 12, padding: 10 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var v = ctx.parsed.y ?? ctx.parsed;
+                                    return ' ' + (typeof v === 'number' ? v.toLocaleString(undefined, {maximumFractionDigits:2}) : v);
+                                }
+                            }
+                        }
+                    },
+                    scales: type === 'doughnut' || type === 'pie' ? {} : {
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                autoSkip: true,
+                                maxTicksLimit: 12
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(v) {
+                                    return v >= 1000 ? (v/1000).toFixed(1)+'k' : v;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        })();
+        </text>
+        }
+    </script>
+}

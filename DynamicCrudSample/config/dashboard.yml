@@ -1,16 +1,39 @@
-# ダッシュボード統計設定
-# 各エントリが Dashboard ページの統計カードとして表示されます。
+# ダッシュボード設定
+# stats  : 統計カード定義（数値サマリー）
+# charts : グラフ定義（Chart.js bar / line / doughnut / pie）
 #
-# フィールド:
-#   label      - 表示ラベル（デフォルト言語）
-#   labelI18n  - ロケール別ラベル（省略可）
-#   entity     - entities.yml で定義したエンティティキー名
-#   aggregate  - count / sum / avg のいずれか
-#   column     - sum / avg の場合に集計するカラム名
-#   filter     - WHERE 句（省略可）
-#   icon       - アイコン絵文字（省略可）
-#   color      - DaisyUI バッジカラークラス（省略可）
+# ── stats フィールド ──────────────────────────────────────────────
+#   label        : 表示ラベル（デフォルト言語）
+#   labelI18n    : ロケール別ラベル（省略可）
+#   entity       : entities.yml で定義したエンティティキー名
+#   aggregate    : count / sum / avg
+#   column       : sum / avg の場合に集計するカラム名
+#   filter       : WHERE 句（省略可）
+#   icon         : アイコン絵文字（省略可）
+#   color        : DaisyUI バッジカラークラス（省略可）
+#
+# ── charts フィールド ────────────────────────────────────────────
+#   title          : グラフタイトル
+#   titleI18n      : ロケール別タイトル（省略可）
+#   type           : bar / line / doughnut / pie
+#   entity         : 集計対象エンティティキー
+#   valueAggregate : count / sum / avg
+#   valueColumn    : sum / avg の場合に集計するカラム名
+#   groupExpression: GROUP BY に使う SQL 式（カラム名 or strftime 等）
+#   labelJoinEntity: FK 経由でラベル取得する場合の JOIN 先エンティティ
+#   labelJoinKey   : 現在エンティティが持つ FK カラム名
+#   labelJoinDisplay: JOIN 先で表示するカラム名
+#   orderBy        : label / value（既定: value）
+#   orderDir       : asc / desc（既定: desc）
+#   limit          : 取得件数（既定: 10）
+#   filter         : WHERE 句（省略可）
+#   colorBg        : 背景色 rgba 文字列
+#   colorBorder    : 枠線色 rgba 文字列
+#   colors         : doughnut / pie 用カラーリスト
 
+# ════════════════════════════════════════════════════════════════
+# 統計カード
+# ════════════════════════════════════════════════════════════════
 stats:
   - label: Artists
     labelI18n:
@@ -42,6 +65,36 @@ stats:
     icon: "🎸"
     color: badge-accent
 
+  - label: Genres
+    labelI18n:
+      en-US: Genres
+      zh-CN: 流派
+      ja-JP: ジャンル
+    entity: genre
+    aggregate: count
+    icon: "🎼"
+    color: badge-primary
+
+  - label: Media Types
+    labelI18n:
+      en-US: Media Types
+      zh-CN: 媒体类型
+      ja-JP: メディアタイプ
+    entity: mediatype
+    aggregate: count
+    icon: "📀"
+    color: badge-secondary
+
+  - label: Playlists
+    labelI18n:
+      en-US: Playlists
+      zh-CN: 播放列表
+      ja-JP: プレイリスト
+    entity: playlist
+    aggregate: count
+    icon: "📋"
+    color: badge-accent
+
   - label: Customers
     labelI18n:
       en-US: Customers
@@ -52,6 +105,16 @@ stats:
     icon: "👥"
     color: badge-info
 
+  - label: Employees
+    labelI18n:
+      en-US: Employees
+      zh-CN: 员工
+      ja-JP: 従業員
+    entity: employee
+    aggregate: count
+    icon: "🧑‍💼"
+    color: badge-neutral
+
   - label: Invoices
     labelI18n:
       en-US: Invoices
@@ -61,6 +124,16 @@ stats:
     aggregate: count
     icon: "📄"
     color: badge-warning
+
+  - label: Invoice Lines
+    labelI18n:
+      en-US: Invoice Lines
+      zh-CN: 发票明细
+      ja-JP: 請求明細
+    entity: invoiceline
+    aggregate: count
+    icon: "🧾"
+    color: badge-ghost
 
   - label: Total Revenue
     labelI18n:
@@ -73,12 +146,95 @@ stats:
     icon: "💰"
     color: badge-success
 
-  - label: Employees
+  - label: Avg Invoice
     labelI18n:
-      en-US: Employees
-      zh-CN: 员工
-      ja-JP: 従業員
-    entity: employee
-    aggregate: count
-    icon: "🧑‍💼"
-    color: badge-neutral
+      en-US: Avg Invoice
+      zh-CN: 平均发票
+      ja-JP: 平均請求額
+    entity: invoice
+    aggregate: avg
+    column: Total
+    icon: "📊"
+    color: badge-info
+
+# ════════════════════════════════════════════════════════════════
+# グラフ
+# ════════════════════════════════════════════════════════════════
+charts:
+  # 月別売上推移（折れ線）
+  - title: Monthly Revenue
+    titleI18n:
+      en-US: Monthly Revenue
+      zh-CN: 月度收入
+      ja-JP: 月別売上推移
+    type: line
+    entity: invoice
+    valueAggregate: sum
+    valueColumn: Total
+    groupExpression: "strftime('%Y-%m', InvoiceDate)"
+    orderBy: label
+    orderDir: asc
+    limit: 24
+    colorBg: "rgba(99, 102, 241, 0.15)"
+    colorBorder: "rgba(99, 102, 241, 1)"
+
+  # ジャンル別トラック数（ドーナツ）
+  - title: Tracks by Genre
+    titleI18n:
+      en-US: Tracks by Genre
+      zh-CN: 按流派的曲目数
+      ja-JP: ジャンル別トラック数
+    type: doughnut
+    entity: track
+    valueAggregate: count
+    labelJoinEntity: genre
+    labelJoinKey: GenreId
+    labelJoinDisplay: Name
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colors:
+      - "rgba(99, 102, 241, 0.85)"
+      - "rgba(16, 185, 129, 0.85)"
+      - "rgba(245, 158, 11, 0.85)"
+      - "rgba(239, 68, 68, 0.85)"
+      - "rgba(59, 130, 246, 0.85)"
+      - "rgba(236, 72, 153, 0.85)"
+      - "rgba(168, 85, 247, 0.85)"
+      - "rgba(14, 165, 233, 0.85)"
+      - "rgba(251, 146, 60, 0.85)"
+      - "rgba(52, 211, 153, 0.85)"
+
+  # 国別請求数 Top 10（横棒）
+  - title: Top 10 Countries by Invoices
+    titleI18n:
+      en-US: Top 10 Countries by Invoices
+      zh-CN: 按国家的发票数 Top 10
+      ja-JP: 国別請求数 Top 10
+    type: bar
+    entity: invoice
+    valueAggregate: count
+    groupExpression: BillingCountry
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colorBg: "rgba(16, 185, 129, 0.7)"
+    colorBorder: "rgba(16, 185, 129, 1)"
+
+  # アーティスト別アルバム数 Top 10（棒グラフ）
+  - title: Top 10 Artists by Albums
+    titleI18n:
+      en-US: Top 10 Artists by Albums
+      zh-CN: 专辑最多的艺术家 Top 10
+      ja-JP: アルバム数 Top 10 アーティスト
+    type: bar
+    entity: album
+    valueAggregate: count
+    labelJoinEntity: artist
+    labelJoinKey: ArtistId
+    labelJoinDisplay: Name
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colorBg: "rgba(245, 158, 11, 0.7)"
+    colorBorder: "rgba(245, 158, 11, 1)"
