@@ -169,6 +169,20 @@
         }
     </div>
 
+    @* CRUD 確認ダイアログモーダル（全ページ共通） *@
+    <dialog id="crud-confirm-modal" class="modal">
+        <div class="modal-box max-w-sm">
+            <h3 class="font-bold text-lg mb-4" id="crud-confirm-msg">確認</h3>
+            <div class="flex gap-3 justify-end">
+                <button id="crud-confirm-ok" class="btn btn-primary">OK</button>
+                <button id="crud-confirm-cancel" class="btn btn-ghost">キャンセル</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
     @* エンティティ選択ピッカーモーダル（全ページ共通） *@
     <dialog id="entity-picker-modal" class="modal">
         <div class="modal-box max-w-3xl">
@@ -202,6 +216,74 @@
 
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        // ===== CRUD 確認ダイアログ =====
+        var _confirmCallback = null;
+
+        /**
+         * DaisyUI のカスタム確認ダイアログを表示します。
+         * @@param {string} msg    確認メッセージ
+         * @@param {function} onOk OK ボタン押下時のコールバック
+         */
+        function showConfirmDialog(msg, onOk) {
+            _confirmCallback = onOk;
+            var msgEl = document.getElementById('crud-confirm-msg');
+            if (msgEl) msgEl.textContent = msg;
+            var dlg = document.getElementById('crud-confirm-modal');
+            if (dlg) dlg.showModal();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var okBtn = document.getElementById('crud-confirm-ok');
+            var cancelBtn = document.getElementById('crud-confirm-cancel');
+
+            if (okBtn) {
+                okBtn.addEventListener('click', function () {
+                    document.getElementById('crud-confirm-modal').close();
+                    if (_confirmCallback) {
+                        var cb = _confirmCallback;
+                        _confirmCallback = null;
+                        cb();
+                    }
+                });
+            }
+
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function () {
+                    document.getElementById('crud-confirm-modal').close();
+                    _confirmCallback = null;
+                });
+            }
+        });
+
+        /**
+         * フォームの submit イベントをキャプチャフェーズで監視し、
+         * data-confirm-msg 属性がある場合に確認ダイアログを挟みます。
+         * HTMX フォームにも対応（requestSubmit() で再送することで HTMX が処理します）。
+         */
+        document.addEventListener('submit', function (evt) {
+            var form = evt.target;
+            var msg = form && form.dataset ? form.dataset.confirmMsg : '';
+            if (!msg || msg.length === 0) return;  // 確認不要
+
+            if (form.dataset.skipConfirm === '1') {
+                // 2 回目（確認済み）は通過させる
+                delete form.dataset.skipConfirm;
+                return;
+            }
+
+            evt.preventDefault();
+            showConfirmDialog(msg, function () {
+                form.dataset.skipConfirm = '1';
+                // requestSubmit() で HTMX を含む全 submit リスナーに再通知
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
+            });
+        }, true /* capture: HTMX より先に処理 */);
+    </script>
     <script>
         // エンティティ選択ピッカー共通ロジック
         var _pickerConfig = null;

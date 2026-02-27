@@ -7,6 +7,16 @@ entities:
     paging:
       pageSize: 10
       mode: numbered
+    # 確認ダイアログ設定: 新規作成・更新時にそれぞれ確認を求める
+    confirmation:
+      create: "新しい顧客を登録してよろしいですか？"
+      update: "顧客情報を更新してよろしいですか？変更内容は即座に反映されます。"
+    # フック設定: 前処理（Email ドメイン検証 + 名前正規化）と後処理（ログ記録）
+    hooks:
+      beforeCreate: "customer_email_domain"
+      afterCreate: "console_log_after"
+      beforeUpdate: "customer_email_domain"
+      afterUpdate: "console_log_after"
     joins:
       - type: left
         table: Employee
@@ -408,6 +418,14 @@ entities:
     paging:
       pageSize: 10
       mode: numbered
+    # 確認ダイアログ設定: 更新時のみ確認（新規は確認なし）
+    confirmation:
+      update: "Invoice の金額・請求先を更新します。よろしいですか？"
+    # フック設定: 最小金額チェック（前処理）
+    hooks:
+      beforeCreate: "invoice_minimum_total"
+      beforeUpdate: "invoice_minimum_total"
+      afterCreate: "console_log_after"
     joins:
       - type: left
         table: Customer

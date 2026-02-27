@@ -6,6 +6,7 @@ using System.Data;
 using DynamicCrudSample.Models;
 using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
+using DynamicCrudSample.Services.Hooks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -20,6 +21,7 @@ public class DynamicEntityController : Controller
     private readonly IEntityMetadataProvider _meta;
     private readonly IValueConverter _converter;
     private readonly IAuditLogService _audit;
+    private readonly IEntityHookRegistry _hookRegistry;
     private readonly ILogger<DynamicEntityController> _logger;
 
     public DynamicEntityController(
@@ -28,6 +30,7 @@ public class DynamicEntityController : Controller
         IEntityMetadataProvider meta,
         IValueConverter converter,
         IAuditLogService audit,
+        IEntityHookRegistry hookRegistry,
         ILogger<DynamicEntityController> logger)
     {
         _db = db;
@@ -35,6 +38,7 @@ public class DynamicEntityController : Controller
         _meta = meta;
         _converter = converter;
         _audit = audit;
+        _hookRegistry = hookRegistry;
         _logger = logger;
     }
 
@@ -193,10 +197,29 @@ public class DynamicEntityController : Controller
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
+        // 前処理フック（BeforeCreate）
+        var hookCtx = new EntityHookContext
+        {
+            Entity = entity,
+            Operation = CrudOperation.Create,
+            Values = values,
+            UserName = User.Identity?.Name
+        };
+        var beforeHookResult = await RunBeforeHookAsync(meta.Hooks?.BeforeCreate, hookCtx);
+        if (beforeHookResult.Cancel)
+        {
+            errors["__hook"] = beforeHookResult.CancelMessage ?? "前処理によりキャンセルされました。";
+            var fkData = await LoadForeignKeyDataForm(meta);
+            var vm = new DynamicFormViewModel(entity, meta, null, fkData, errors, mode);
+            return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
+        }
+
         await ExecuteCrudTransactionAsync(async tx =>
         {
             await _repo.InsertAsync(entity, values, tx);
             await _audit.WriteAsync("create", entity, $"Created {entity}", User.Identity?.Name, _db, tx);
+            // 後処理フック（AfterCreate）— 同一 Tx 内で実行
+            await RunAfterHookAsync(meta.Hooks?.AfterCreate, hookCtx, tx);
         });
         if (isPageMode)
         {
@@ -276,10 +299,31 @@ public class DynamicEntityController : Controller
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
+        // 前処理フック（BeforeUpdate）
+        var hookCtx = new EntityHookContext
+        {
+            Entity = entity,
+            Operation = CrudOperation.Update,
+            Id = id,
+            Values = values,
+            UserName = User.Identity?.Name
+        };
+        var beforeHookResult = await RunBeforeHookAsync(meta.Hooks?.BeforeUpdate, hookCtx);
+        if (beforeHookResult.Cancel)
+        {
+            errors["__hook"] = beforeHookResult.CancelMessage ?? "前処理によりキャンセルされました。";
+            var item = await _repo.GetByIdAsync(entity, id);
+            var fkData = await LoadForeignKeyDataForm(meta);
+            var vm = new DynamicFormViewModel(entity, meta, item, fkData, errors, mode);
+            return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
+        }
+
         await ExecuteCrudTransactionAsync(async tx =>
         {
             await _repo.UpdateAsync(entity, id, values, tx);
             await _audit.WriteAsync("update", entity, $"Updated {entity} id={id}", User.Identity?.Name, _db, tx);
+            // 後処理フック（AfterUpdate）— 同一 Tx 内で実行
+            await RunAfterHookAsync(meta.Hooks?.AfterUpdate, hookCtx, tx);
         });
         if (isPageMode)
         {
@@ -574,6 +618,42 @@ public class DynamicEntityController : Controller
         }
 
         return filters;
+    }
+
+    // -------- フックヘルパー --------
+
+    private async Task<HookResult> RunBeforeHookAsync(string? hookName, EntityHookContext ctx)
+    {
+        if (string.IsNullOrWhiteSpace(hookName))
+        {
+            return HookResult.Continue();
+        }
+
+        var hook = _hookRegistry.Find(hookName);
+        if (hook == null)
+        {
+            _logger.LogWarning("BeforeHook '{Name}' not registered — skipping", hookName);
+            return HookResult.Continue();
+        }
+
+        return await hook.BeforeAsync(ctx, _db, null);
+    }
+
+    private async Task RunAfterHookAsync(string? hookName, EntityHookContext ctx, IDbTransaction tx)
+    {
+        if (string.IsNullOrWhiteSpace(hookName))
+        {
+            return;
+        }
+
+        var hook = _hookRegistry.Find(hookName);
+        if (hook == null)
+        {
+            _logger.LogWarning("AfterHook '{Name}' not registered — skipping", hookName);
+            return;
+        }
+
+        await hook.AfterAsync(ctx, _db, tx);
     }
 
     private async Task ExecuteCrudTransactionAsync(Func<IDbTransaction, Task> action)

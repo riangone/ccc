@@ -18,17 +18,35 @@
     {
         routeValues["id"] = routeId;
     }
+    // 確認ダイアログメッセージ（entities.yml の confirmation セクションから取得）
+    var confirmMsg = Model.Meta.Confirmation != null
+        ? (isEdit ? Model.Meta.Confirmation.Update : Model.Meta.Confirmation.Create)
+        : null;
+    // フック由来のエラーメッセージ（前処理キャンセル時に __hook キーで格納される）
+    var hookError = Model.Errors.TryGetValue("__hook", out var he) ? he : null;
 }
 
 <div class="card bg-base-100 shadow">
     <div class="card-body">
         <h2 class="card-title">@Model.Meta.GetDisplayName() - @(isEdit ? "Edit" : "Create")</h2>
 
+        @* フック前処理キャンセル時のエラーバナー *@
+        @if (!string.IsNullOrEmpty(hookError))
+        {
+            <div class="alert alert-error mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>@hookError</span>
+            </div>
+        }
+
         @if (isPageMode)
         {
             <form class="grid @formColClass gap-4"
                   method="post"
-                  action="@Url.Action(action, "DynamicEntity", routeValues)">
+                  action="@Url.Action(action, "DynamicEntity", routeValues)"
+                  data-confirm-msg="@(confirmMsg ?? "")">
                 <input type="hidden" name="mode" value="@Model.Mode" />
                 <input type="hidden" name="returnUrl" value="@Context.Request.Query["returnUrl"]" />
                 @foreach (var field in orderedForms)
@@ -225,7 +243,8 @@
             <form class="grid @formColClass gap-4"
                   hx-post="@Url.Action(action, "DynamicEntity", routeValues)"
                   hx-target="#modal-form-content"
-                  hx-swap="innerHTML">
+                  hx-swap="innerHTML"
+                  data-confirm-msg="@(confirmMsg ?? "")">
                 <input type="hidden" name="mode" value="@Model.Mode" />
                 <input type="hidden" name="returnUrl" value="@Context.Request.Query["returnUrl"]" />
                 @foreach (var field in orderedForms)

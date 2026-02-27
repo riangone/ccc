@@ -145,6 +145,10 @@ public class EntityDefinition
     public bool IsPublic { get; set; } = true;
     public Dictionary<string, FilterDefinition> Filters { get; set; } = new();
     public Dictionary<string, EntityLinkDefinition> Links { get; set; } = new();
+    /// <summary>新規作成・更新時の確認ダイアログ設定</summary>
+    public ConfirmationDefinition? Confirmation { get; set; }
+    /// <summary>前処理・後処理フックの設定</summary>
+    public EntityHooksDefinition? Hooks { get; set; }
 
     public string GetDisplayName() => I18nText.Resolve(DisplayNameI18n, DisplayName);
 
@@ -187,6 +191,34 @@ public class EntityDefinition
         result.AddRange(Filters.Where(f => result.All(x => x.Key != f.Key)));
         return result;
     }
+}
+
+/// <summary>
+/// 新規作成・更新時の確認ダイアログメッセージ設定。
+/// entities.yml の confirmation セクションに対応します。
+/// </summary>
+public class ConfirmationDefinition
+{
+    /// <summary>新規作成時の確認メッセージ（null/空の場合は確認なし）</summary>
+    public string? Create { get; set; }
+    /// <summary>更新時の確認メッセージ（null/空の場合は確認なし）</summary>
+    public string? Update { get; set; }
+}
+
+/// <summary>
+/// 前処理・後処理フックの設定。
+/// entities.yml の hooks セクションに対応します。
+/// </summary>
+public class EntityHooksDefinition
+{
+    /// <summary>DB 書き込み前に実行するフック名（create 時）</summary>
+    public string? BeforeCreate { get; set; }
+    /// <summary>DB 書き込み後に実行するフック名（create 時）</summary>
+    public string? AfterCreate { get; set; }
+    /// <summary>DB 書き込み前に実行するフック名（update 時）</summary>
+    public string? BeforeUpdate { get; set; }
+    /// <summary>DB 書き込み後に実行するフック名（update 時）</summary>
+    public string? AfterUpdate { get; set; }
 }
 
 public class EntityLinkDefinition

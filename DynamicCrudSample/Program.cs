@@ -7,6 +7,7 @@ using System.Globalization;
 using DynamicCrudSample.Data;
 using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
+using DynamicCrudSample.Services.Hooks;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Data.Sqlite;
@@ -50,6 +51,14 @@ builder.Services.AddSingleton<IValueConverter, ValueConverter>();
 builder.Services.AddScoped<IDynamicCrudRepository, DynamicCrudRepository>();
 builder.Services.AddScoped<IUserAuthService, UserAuthService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+
+// ===== エンティティフック =====
+// 新しいフックを追加する場合はここに IEntityHook の実装を登録してください。
+builder.Services.AddSingleton<IEntityHook, CustomerEmailDomainHook>();
+builder.Services.AddSingleton<IEntityHook, CustomerNameNormalizeHook>();
+builder.Services.AddSingleton<IEntityHook, InvoiceMinimumTotalHook>();
+builder.Services.AddSingleton<IEntityHook, ConsoleLogAfterHook>();
+builder.Services.AddSingleton<IEntityHookRegistry, EntityHookRegistry>();
 
 var app = builder.Build();
 
