@@ -407,3 +407,133 @@ entities:
 ## 14. 運用ルール（更新）
 1. 今後、**push を行う前に必ず修改记录（`docs/CHANGELOG.md`）を更新する**。
 2. 変更内容、影響範囲、検証結果（最低1つ）を記録してから push する。
+
+---
+
+## 16. 確認ダイアログ・前処理・後処理フック
+
+詳細は `docs/confirmation-and-hooks.md` を参照してください。
+
+### 16.1 確認ダイアログ（`ConfirmationDefinition`）
+
+```yaml
+customer:
+  confirmation:
+    create: "新しい顧客を登録してよろしいですか？"
+    update: "顧客情報を更新してよろしいですか？"
+```
+
+- **ページモード**: `submit` イベント（キャプチャフェーズ）で `data-confirm-msg` 属性を検出し、DaisyUI モーダルを表示
+- **モーダルモード（HTMX）**: `hx-confirm` 属性 + `htmx:confirm` イベントハンドラ経由。空文字の場合は確認なしで即リクエスト
+
+### 16.2 フックシステム（`Services/Hooks/`）
+
+```
+Services/Hooks/
+├── EntityHookContext.cs   # コンテキスト（Entity / Operation / Values / UserName / Data）
+├── IEntityHook.cs         # インターフェース（BeforeAsync / AfterAsync）
+├── IEntityHookRegistry.cs # 名前→実装ルックアップ
+├── EntityHookRegistry.cs  # DI 経由の IEnumerable<IEntityHook> から辞書を構築
+└── SampleHooks.cs         # 4 種のサンプル実装
+```
+
+**フック登録（`Program.cs`）:**
+```csharp
+builder.Services.AddSingleton<IEntityHook, CustomerEmailDomainHook>();
+builder.Services.AddSingleton<IEntityHook, CustomerNameNormalizeHook>();
+builder.Services.AddSingleton<IEntityHook, InvoiceMinimumTotalHook>();
+builder.Services.AddSingleton<IEntityHook, ConsoleLogAfterHook>();
+builder.Services.AddSingleton<IEntityHookRegistry, EntityHookRegistry>();
+```
+
+**処理フロー:** バリデーション → BeforeAsync（中断可） → DB 書き込み + AuditLog → AfterAsync → コミット
+
+---
+
+## 17. SQL Server サポート
+
+### 17.1 データベースプロバイダー設定
+
+`appsettings.json` の `DatabaseProvider` を変更するだけで切り替えられます。
+
+```json
+{
+  "DatabaseProvider": "sqlite",   // または "sqlserver"
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=chinook.db",
+    "SqlServer": "Server=...;Database=Chinook;TrustServerCertificate=True;"
+  }
+}
+```
+
+### 17.2 SQL 方言抽象（`Services/Dialect/`）
+
+| クラス | ページング構文 | ConcatOperator |
+|--------|---------------|----------------|
+| `SqliteDialect` | `LIMIT @PageSize OFFSET @Offset` | `\|\|` |
+| `SqlServerDialect` | `ORDER BY ... OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY` | `+` |
+
+SQL Server では ORDER BY が必須のため、ソート未指定時は主キーでフォールバックします。
+
+### 17.3 YAML ディレクトリのマージ戦略（`Services/EntityMetadataProvider.cs`）
+
+```
+config/entities-sqlserver/   ← 先に読み込み（差分ファイルのみ配置）
+config/entities/             ← 不足エンティティを補完
+```
+
+SQL Server で変更が必要なのは文字列連結演算子を使う YAML のみです：
+- `entities-sqlserver/customer.yml`（`e.LastName + ', ' + e.FirstName`）
+- `entities-sqlserver/invoice.yml`（`c.LastName + ', ' + c.FirstName`）
+
+### 17.4 DB 初期化（`Data/DbInitializer.cs`）
+
+| プロバイダー | 動作 |
+|-------------|------|
+| `sqlite` | Chinook DB を自動ダウンロード（存在しない場合）+ SQLite 構文で AppUser/AuditLog 作成 |
+| `sqlserver` | Chinook ダウンロードをスキップ + SQL Server 構文（`IF NOT EXISTS` / `INT IDENTITY`）でテーブル作成 |
+
+---
+
+## 18. Chinook 全テーブル YAML（SQLite 版）
+
+| ファイル | エンティティ | 主な設定 |
+|----------|-------------|---------|
+| `artist.yml` | Artist | 名前検索・ソート |
+| `album.yml` | Album | Artist FK ピッカー、Artist フィルター |
+| `track.yml` | Track | Album/Genre FK、価格範囲フィルター、keyset ページング |
+| `genre.yml` | Genre | 名前検索 |
+| `employee.yml` | Employee | 生年月日範囲フィルター |
+| `customer.yml` | Customer | SupportRep FK、国フィルター、Invoice リンク |
+| `invoice.yml` | Invoice | Customer FK ピッカー、日付・金額範囲フィルター |
+| `mediatype.yml` | MediaType | Track へのリンク付き（新規追加） |
+| `playlist.yml` | Playlist | 名前検索（新規追加） |
+| `invoiceline.yml` | InvoiceLine | Invoice/Track FK、Unit Price 範囲フィルター（新規追加） |
+
+---
+
+## 19. UX バグ修正
+
+### 19.1 フォームフィールド消去バグ
+
+バリデーションエラーやフックキャンセル時に `item = null` で VM を組み立てていたため、全フォームフィールドが空になっていた問題を修正しました。
+
+- `DynamicFormViewModel` に `SubmittedValues: Dictionary<string, string?>?` を追加
+- `Create`・`Edit` のすべてのエラーリターン経路で `SubmittedValues: form` を渡す
+- `_Form.cshtml` でフィールド値表示時に `SubmittedValues` を優先
+
+### 19.2 HTMX 確認ダイアログ競合
+
+HTMX フォームの `submit` イベントで `evt.preventDefault()` を呼んでも XHR が送られてしまう問題を修正。
+
+- HTMX 組み込みの `hx-confirm` + `htmx:confirm` イベントに切り替え
+- `evt.detail.issueRequest(true)` で確認後にリクエストを発行
+- `hx-confirm=""` 空文字は確認なし扱いで即リクエスト
+
+### 19.3 リンクラベルの多言語対応
+
+`EntityLinkDefinition` に `LabelI18n` / `GetLabel()` を追加し、`_List.cshtml` を更新。
+
+### 19.4 _FormField.cshtml の抽出
+
+ページモード・モーダルモードで重複していたフィールド描画 HTML を `_FormField.cshtml` に抽出。両モードとも `Html.PartialAsync("_FormField", ...)` を呼ぶよう変更し、メンテナビリティを向上。

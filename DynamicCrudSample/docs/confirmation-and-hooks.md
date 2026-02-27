@@ -94,7 +94,9 @@ entities:
 
 ### クライアントサイド実装
 
-`_Layout.cshtml` に配置された DaisyUI モーダルと JavaScript が動作します。
+`_Layout.cshtml` に配置された DaisyUI モーダルと JavaScript が、ページモード・モーダルモードで別の仕組みで動作します。
+
+#### ページモード（通常 POST フォーム）
 
 ```
 フォームに data-confirm-msg 属性あり
@@ -108,12 +110,35 @@ showConfirmDialog(msg, callback) を呼び出し
    ┌────┴────┐
    │ OK      │ キャンセル
    ▼         └─→ (フォーム送信をキャンセル)
-form.requestSubmit()  ← HTMX も含め再送
+form.dataset.skipConfirm = '1' をセットして
+form.requestSubmit() で再送（2重確認防止）
 ```
 
-- **モーダルモード（HTMX）・ページモードの両方で動作**
-- `requestSubmit()` を使うことで HTMX のインターセプトも正常に通過
-- `data-skip-confirm` フラグで2重確認を防止
+#### モーダルモード（HTMX フォーム）
+
+```
+フォームに hx-confirm="メッセージ" 属性あり
+        │
+        ▼
+htmx:confirm イベントが発火
+  ├─ メッセージが空 → evt.detail.issueRequest(true) で即リクエスト
+  └─ メッセージあり →
+        │
+        ▼
+    showConfirmDialog(msg, callback) を呼び出し
+        │
+   ┌────┴────┐
+   │ OK      │ キャンセル
+   ▼         └─→ (リクエストをキャンセル)
+evt.detail.issueRequest(true)  ← HTMX 経由でリクエストを発行
+```
+
+> **重要**: HTMX フォームでは `submit` イベントの `evt.preventDefault()` を呼んでも XHR を止められません。
+> そのため HTMX 組み込みの `hx-confirm` + `htmx:confirm` イベントを使います。
+
+- **ページモード**: `data-confirm-msg` 属性 + `submit` イベントキャプチャ
+- **モーダルモード（HTMX）**: `hx-confirm` 属性 + `htmx:confirm` イベント + `evt.detail.issueRequest(true)`
+- `hx-confirm=""` 空文字の場合は確認なしで即リクエスト（確認不要エンティティで `hx-confirm` を省略できない場合の対応）
 
 ---
 

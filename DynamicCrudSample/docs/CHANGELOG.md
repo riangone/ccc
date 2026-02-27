@@ -1,5 +1,135 @@
 # CHANGELOG
 
+## 2026-02-27（SQL Server対応・全Chinook YAML・UXバグ修正・フック＆確認ダイアログ）
+
+### 追加
+
+#### 1. SQL Server 方言サポート（`Services/Dialect/`）
+
+データベースプロバイダーごとにページング SQL を切り替える `ISqlDialect` 抽象を導入しました。
+
+| ファイル | 説明 |
+|----------|------|
+| `Services/Dialect/ISqlDialect.cs` | `AppendNumberedPagination` / `AppendKeysetPagination` / `ConcatOperator` インターフェース |
+| `Services/Dialect/SqliteDialect.cs` | `LIMIT @PageSize OFFSET @Offset` による実装 |
+| `Services/Dialect/SqlServerDialect.cs` | `ORDER BY ... OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY`。ORDER BY が未指定の場合は主キーで自動補完 |
+
+`Program.cs` の `DatabaseProvider` 設定（`"sqlite"` / `"sqlserver"`）に応じて DI に登録されます。
+
+```json
+// appsettings.json
+{
+  "DatabaseProvider": "sqlite",           // "sqlserver" に変えるだけで切り替え
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=chinook.db",
+    "SqlServer": "Server=localhost;Database=Chinook;Trusted_Connection=True;TrustServerCertificate=True;"
+  }
+}
+```
+
+#### 2. SQL Server 用 DB 初期化（`Data/DbInitializer.cs`）
+
+`DatabaseProvider` が `sqlserver` の場合、SQLite の Chinook ダウンロードをスキップし、SQL Server 向け DDL（`IF NOT EXISTS` / `INT IDENTITY(1,1)` 構文）で `AppUser` / `AuditLog` テーブルを作成します。
+
+#### 3. EntityMetadataProvider — プロバイダー別 YAML ディレクトリ（`Services/EntityMetadataProvider.cs`）
+
+- `sqlserver` 時: `config/entities-sqlserver/` を**先に**読み込み、不足エンティティを `config/entities/` で補完
+- `sqlite` 時: `config/entities/` のみ読み込み（従来通り）
+
+差分だけを `entities-sqlserver/` に置けばよいため、重複が最小化されます。
+
+#### 4. Chinook 全テーブル YAML（`config/entities/`）
+
+| ファイル | テーブル | 追加内容 |
+|----------|----------|----------|
+| `mediatype.yml` | MediaType | 一覧・新規・編集・Track へのリンク |
+| `playlist.yml` | Playlist | 一覧・新規・編集 |
+| `invoiceline.yml` | InvoiceLine | Invoice / Track FK ピッカー対応、Unit Price 範囲フィルター |
+
+#### 5. SQL Server 向け差分 YAML（`config/entities-sqlserver/`）
+
+SQLite と異なる点（文字列連結 `||` → `+`）のみを上書きします。
+
+| ファイル | 変更箇所 |
+|----------|----------|
+| `customer.yml` | `SupportRepName.expression` を `e.LastName + ', ' + e.FirstName` に変更 |
+| `invoice.yml` | `CustomerName.expression` を `c.LastName + ', ' + c.FirstName` に変更 |
+
+#### 6. 確認ダイアログ・前処理・後処理フック（`Services/Hooks/`、`Models/EntityMetadata.cs`）
+
+YAML の `confirmation` / `hooks` セクションで、作成・更新操作に確認ダイアログと前後処理を追加できます（詳細は `docs/confirmation-and-hooks.md` 参照）。
+
+**新規ファイル:**
+- `Services/Hooks/EntityHookContext.cs`（`CrudOperation` / `HookResult` / `EntityHookContext`）
+- `Services/Hooks/IEntityHook.cs`（フックインターフェース）
+- `Services/Hooks/IEntityHookRegistry.cs`（レジストリインターフェース）
+- `Services/Hooks/EntityHookRegistry.cs`（DI 経由の名前→実装マップ）
+- `Services/Hooks/SampleHooks.cs`（4 種のサンプル実装）
+
+#### 7. リンクラベルの多言語対応（`Models/EntityMetadata.cs`）
+
+`EntityLinkDefinition` に `LabelI18n` プロパティと `GetLabel()` メソッドを追加。
+`_List.cshtml` のリンク表示を `link.Label` から `link.GetLabel()` に変更しました。
+
+```yaml
+links:
+  invoices:
+    label: Invoices
+    labelI18n: { en-US: Invoices, zh-CN: 发票, ja-JP: 請求書 }
+    targetEntity: invoice
+    filter: { CustomerId: CustomerId }
+```
+
+#### 8. フォームフィールドパーシャル抽出（`Views/DynamicEntity/_FormField.cshtml`）
+
+ページモードとモーダルモードで重複していたフィールド描画 HTML を `_FormField.cshtml` パーシャルビューに切り出し、両モードから `Html.PartialAsync` で参照するよう変更しました。
+
+### 修正
+
+#### 1. フォームフィールド消去バグ（バリデーション・フックエラー時）
+
+`DynamicFormViewModel` に `SubmittedValues` （`Dictionary<string, string?>`）パラメータを追加。バリデーションエラーやフックキャンセル時にも送信値でフォームを再描画するようにしました。
+
+**修正前**: エラー時に `item = null` で VM を組み立てていたためフィールドが空になる。
+**修正後**: 送信フォーム値 `form` を `SubmittedValues` として渡し、フィールド値を復元。
+
+影響ファイル: `Controllers/DynamicEntityController.cs`、`Views/DynamicEntity/_Form.cshtml`、`Views/DynamicEntity/_FormField.cshtml`
+
+#### 2. HTMX 確認ダイアログと前処理フックの競合
+
+**根本原因**: HTMX フォームの `submit` イベントで `evt.preventDefault()` を呼んでも HTMX は XHR を送信してしまう。そのため確認ダイアログ表示中にサーバーへリクエストが送られ、フックエラーと確認ダイアログが同時に発生していた。
+
+**修正方法**:
+- モーダルモードの `<form>` に `hx-confirm="@(confirmMsg ?? "")"` 属性を付与
+- `_Layout.cshtml` の `htmx:confirm` イベントハンドラでカスタムダイアログを表示し、OK 後に `evt.detail.issueRequest(true)` を呼ぶ
+- `hx-confirm=""` の場合（確認なし）はダイアログをスキップして即座にリクエスト発行
+
+```javascript
+document.body.addEventListener('htmx:confirm', function (evt) {
+    var msg = evt.detail.question;
+    if (!msg) {
+        evt.preventDefault();
+        evt.detail.issueRequest(true);  // 確認なし→即リクエスト
+        return;
+    }
+    evt.preventDefault();
+    showConfirmDialog(msg, function () { evt.detail.issueRequest(true); });
+});
+```
+
+#### 3. Razor ビルドエラー修正（`_Form.cshtml`）
+
+`else {}` ブロック内に誤って `@{}` を入れ子にした問題（`RZ1010`）と、`<form>` タグの属性エリアで `@Html.Raw()` を使った問題（`RZ1031`）を修正しました。
+
+### 検証結果
+
+1. `dotnet build` 成功（0 エラー）
+2. SQLite モードでの動作変更なし（LIMIT / OFFSET は従来通り）
+3. `entities-sqlserver/` の YAML が SQLite フォールバックと正しくマージされることを確認（設計ベース）
+4. フォームフィールドがバリデーションエラー後も送信値を保持することを確認（設計ベース）
+
+---
+
 ## 2026-02-27（UI改善：パンくず多段化・Newボタン位置変更・エンティティ選択ピッカー）
 
 ### 追加
