@@ -537,3 +537,345 @@ HTMX フォームの `submit` イベントで `evt.preventDefault()` を呼ん�
 ### 19.4 _FormField.cshtml の抽出
 
 ページモード・モーダルモードで重複していたフィールド描画 HTML を `_FormField.cshtml` に抽出。両モードとも `Html.PartialAsync("_FormField", ...)` を呼ぶよう変更し、メンテナビリティを向上。
+
+---
+
+## 20. Dashboard 機能（YAML 定義統計カード）
+
+### 20.1 概要
+
+アプリのトップページを **Dashboard** に変更しました。`config/dashboard.yml` に統計定義を書くだけで、DB から集計した数値をカード形式でリアルタイムに表示できます。コードの変更は不要です。
+
+### 20.2 新規ファイル一覧
+
+| ファイル | 役割 |
+|---------|------|
+| `Models/DashboardConfig.cs` | `DashboardConfig`（ルートモデル）/ `DashboardStatDefinition`（統計定義クラス） |
+| `Services/DashboardConfigProvider.cs` | `IDashboardConfigProvider` インターフェースと実装（YAML ローダー） |
+| `Controllers/DashboardController.cs` | 統計集計クエリを実行し、View モデルを組み立てるコントローラー |
+| `Views/Dashboard/Index.cshtml` | 統計カードを DaisyUI stat コンポーネントで表示 |
+| `config/dashboard.yml` | 統計定義 YAML（デフォルト設定） |
+
+### 20.3 アーキテクチャ
+
+```
+config/dashboard.yml
+        │  起動時に読み込み（Singleton）
+        ▼
+DashboardConfigProvider
+        │  GetConfig() → DashboardConfig.Stats[]
+        ▼
+DashboardController.Index()
+        │  foreach stat → SQL 組み立て・実行
+        │    COUNT(*) / SUM(column) / AVG(column)
+        ▼
+List<DashboardStatViewModel>
+        │
+        ▼
+Views/Dashboard/Index.cshtml  →  stat カード × N 枚
+```
+
+### 20.4 モデル定義（`Models/DashboardConfig.cs`）
+
+```csharp
+public class DashboardConfig
+{
+    public List<DashboardStatDefinition> Stats { get; set; } = new();
+}
+
+public class DashboardStatDefinition
+{
+    public string Label { get; set; } = "";
+    public Dictionary<string, string> LabelI18n { get; set; } = new();
+    public string Entity    { get; set; } = "";    // entities.yml のキー名と一致
+    public string Aggregate { get; set; } = "count"; // count / sum / avg
+    public string? Column   { get; set; }          // sum / avg の集計対象カラム
+    public string? Filter   { get; set; }          // WHERE 句（任意）
+    public string? Icon     { get; set; }          // 絵文字アイコン
+    public string? Color    { get; set; }          // DaisyUI バッジクラス
+
+    public string GetLabel()  // 現在ロケールに対応するラベルを返す
+}
+```
+
+### 20.5 YAML 設定リファレンス（`config/dashboard.yml`）
+
+```yaml
+stats:
+  # カウント集計（最もシンプル）
+  - label: Artists
+    labelI18n:
+      en-US: Artists
+      zh-CN: 艺术家
+      ja-JP: アーティスト
+    entity: artist        # entities.yml のエンティティキー
+    aggregate: count
+    icon: "🎵"
+    color: badge-primary
+
+  # SUM 集計（column 必須）
+  - label: Total Revenue
+    labelI18n:
+      en-US: Total Revenue
+      zh-CN: 总收入
+      ja-JP: 総売上
+    entity: invoice
+    aggregate: sum
+    column: Total         # 集計するカラム名
+    icon: "💰"
+    color: badge-success
+
+  # フィルター付き集計
+  - label: Active Tracks
+    entity: track
+    aggregate: count
+    filter: "Milliseconds > 0"   # WHERE 句を直接記述
+    icon: "🎸"
+    color: badge-accent
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|------|------|
+| `label` | string | ✅ | デフォルト言語ラベル |
+| `labelI18n` | map | — | ロケール別ラベル（`en-US` / `zh-CN` / `ja-JP`） |
+| `entity` | string | ✅ | `entities.yml` で定義したエンティティキー |
+| `aggregate` | string | ✅ | `count` / `sum` / `avg` |
+| `column` | string | `sum`/`avg` 時必須 | 集計対象カラム名 |
+| `filter` | string | — | WHERE 句（省略可） |
+| `icon` | string | — | アイコン絵文字 |
+| `color` | string | — | DaisyUI バッジカラークラス（例: `badge-primary`） |
+
+### 20.6 コントローラーの集計ロジック（`Controllers/DashboardController.cs`）
+
+各統計定義について以下の SQL を動的に組み立て、Dapper の `ExecuteScalarAsync` で実行します。
+
+```csharp
+// count
+"SELECT COUNT(*) FROM {meta.Table}"
+
+// sum
+"SELECT COALESCE(SUM({stat.Column}), 0) FROM {meta.Table}"
+
+// avg
+"SELECT COALESCE(AVG({stat.Column}), 0) FROM {meta.Table}"
+
+// filter がある場合は末尾に WHERE を追加
+sql += $" WHERE {stat.Filter}";
+```
+
+- `entity` に対応するメタデータが見つからない場合はその統計をスキップ
+- SQL 実行が失敗した場合もスキップ（ダッシュボード全体がクラッシュしない）
+- `decimal` / `double` / `float` は `"N2"` 書式（カンマ区切り小数2桁）で表示
+
+### 20.7 DI 登録（`Program.cs`）
+
+```csharp
+builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>();
+```
+
+`DashboardConfigProvider` は起動時に `config/dashboard.yml` を一度だけ読み込み、Singleton として保持します。YAML ファイルが存在しない場合は空の統計リストで動作します。
+
+### 20.8 デフォルトルート変更
+
+```csharp
+// Program.cs（変更後）
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Dashboard}/{action=Index}/{id?}");
+```
+
+アプリの起動直後（`/`）にアクセスすると Dashboard が表示されます。
+
+---
+
+## 21. UX バグ修正（URLリセット・パンくず重複・HOME→Dashboard）
+
+### 21.1 "New Page" ボタンの URLリセットバグ
+
+#### 原因
+
+`Index.cshtml` のヘッダー部分に "New Page" ボタンを配置していた。HTMX が `#list-container` を部分更新する際、`Index.cshtml` 本体（ヘッダー含む）は再描画されない。そのため検索・ソート・フィルター状態が変化しても、ボタンの `returnUrl` は初期状態のシンプルな URL（`?entity=customer`）のままになっていた。
+
+```
+[HTMX 更新の範囲]
+Index.cshtml（再描画されない）
+  └── #list-container（_List.cshtml）← ここだけ更新される
+```
+
+#### 修正
+
+"New Page" ボタンを `Index.cshtml` から削除し、`_List.cshtml` の先頭（カード内）に移動しました。`_List.cshtml` は HTMX によって毎回再描画されるため、`currentReturnUrl`（検索・ソート・フィルター・ページ状態を含む完全な URL）が常に最新の値を持ちます。
+
+```razor
+{{!-- _List.cshtml（変更後） --}}
+<div class="card bg-base-100 shadow">
+    <div class="card-body space-y-4">
+        <div class="flex items-center gap-2 flex-wrap">
+            <a class="btn btn-outline btn-sm"
+               href="@Url.Action("CreatePage", ..., new { returnUrl = currentReturnUrl })">
+                New Page
+            </a>
+            ...（ページサイズセレクタ）
+        </div>
+```
+
+`currentReturnUrl` は `_List.cshtml` 内で以下のように構築されています：
+
+```razor
+var currentListUrl = Url.Action("Index", "DynamicEntity", new
+{
+    entity = Model.Entity,
+    search = Model.Search,
+    sort   = Model.Sort,
+    dir    = Model.Dir,
+    pageSize = Model.PageSize,
+    count  = Model.CountEnabled ? "true" : "false",
+    cursor = Model.Cursor,
+    returnUrl = Model.ReturnUrl,
+    // ...
+});
+var currentReturnUrl = string.IsNullOrEmpty(currentListUrl) ? null : currentListUrl;
+```
+
+### 21.2 保存後 URLリセットバグ（Create / Edit POST）
+
+#### 原因
+
+ページモードで新規作成・更新が成功した後、コントローラーが以下のようにリダイレクトしていた。
+
+```csharp
+// 修正前
+if (isPageMode)
+{
+    return RedirectToAction(nameof(Index), new { entity });
+    // → /DynamicEntity/Index?entity=customer  ← 検索・ソート状態が消える
+}
+```
+
+#### 修正
+
+`returnUrl`（フォームの hidden フィールドから `[FromForm]` で受け取る）が存在する場合はそちらへリダイレクトするよう変更しました。
+
+```csharp
+// 修正後（Create POST / Edit POST 共通）
+if (isPageMode)
+{
+    return Redirect(returnUrl ?? Url.Action(nameof(Index), new { entity })!);
+    // returnUrl があれば検索・ソート状態を維持して戻る
+}
+```
+
+`returnUrl` は `_Form.cshtml` の hidden フィールドとして送信されます：
+
+```razor
+<input type="hidden" name="returnUrl" value="@Context.Request.Query["returnUrl"]" />
+```
+
+#### 影響ファイル
+
+- `Controllers/DynamicEntityController.cs`（`Create` POST・`Edit` POST の isPageMode 分岐）
+
+### 21.3 Cancel ボタンの URLリセットバグ
+
+ページモードのフォームに「Cancel」リンクがあるが、これも `returnUrl` を無視して基本 Index に遷移していた。
+
+```razor
+{{!-- 修正前 --}}
+<a href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">Cancel</a>
+
+{{!-- 修正後 --}}
+@{
+    var cancelUrl = Context.Request.Query["returnUrl"].ToString() is { Length: > 0 } cancelReturnUrl
+        ? cancelReturnUrl
+        : Url.Action("Index", "DynamicEntity", new { entity = Model.Entity });
+}
+<a href="@cancelUrl">Cancel</a>
+```
+
+#### 影響ファイル
+
+- `Views/DynamicEntity/_Form.cshtml`
+
+### 21.4 パンくずリスト重複バグ（FormPage.cshtml）
+
+#### 原因
+
+`BuildBreadcrumbChain(returnUrl)` は `returnUrl` クエリパラメータを再帰的に解析し、エンティティ名を抽出してリストを構築します（セクション 15.1 参照）。
+
+一方、`FormPage.cshtml` にはエンティティリンクがハードコードされていました。
+
+```razor
+{{!-- 修正前：常に表示（BuildBreadcrumbChain の出力と重複する） --}}
+@foreach (var crumb in breadcrumbs) { /* Customer */ }
+<li><a href="...">Customer</a></li>   {{!-- ← ハードコード（重複）}}
+<li>Edit</li>
+```
+
+結果として `Dashboard / Customer / Customer / Edit` のように同じエンティティ名が2回表示されていた。
+
+#### 修正
+
+パンくずチェーンが存在する場合（`returnUrl` が提供された通常ナビゲーション時）はハードコードのリンクを省略し、チェーンが空の場合（直接 URL アクセスなど）のみ表示するよう変更しました。
+
+```razor
+{{!-- 修正後 --}}
+@foreach (var crumb in breadcrumbs) { /* チェーン由来のリンク */ }
+@if (breadcrumbs.Count == 0)
+{
+    {{!-- returnUrl がない直接ナビゲーション時のみ表示 --}}
+    <li><a href="@Url.Action("Index", ...)">@Model.Meta.GetDisplayName()</a></li>
+}
+<li>@formLabel</li>
+```
+
+| シナリオ | 修正前 | 修正後 |
+|---------|--------|--------|
+| 一覧 → Edit Page（returnUrl あり） | Dashboard / Customer / **Customer** / Edit | Dashboard / Customer / Edit ✅ |
+| 直接 URL アクセス（returnUrl なし） | Dashboard / Customer / Edit | Dashboard / Customer / Edit ✅ |
+
+#### 影響ファイル
+
+- `Views/DynamicEntity/FormPage.cshtml`
+
+### 21.5 HOME → Dashboard への変更
+
+パンくずナビゲーションの最上位ラベル「Home」を「Dashboard」に変更し、リンク先も `DashboardController.Index` に変更しました。
+
+```razor
+{{!-- 修正前（Index.cshtml / FormPage.cshtml 共通） --}}
+<a asp-controller="Home" asp-action="Index">Home</a>
+
+{{!-- 修正後 --}}
+<a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+```
+
+また `_Layout.cshtml` のサイドバーにも Dashboard リンクをエンティティ一覧の上部に追加しました。
+
+```razor
+{{!-- _Layout.cshtml サイドバー --}}
+<li>
+    <a class="@(isDashboard ? "active" : "")"
+       asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+</li>
+<li class="menu-title mt-1"><span>Entities</span></li>
+{{!-- エンティティ一覧 ... --}}
+```
+
+#### 影響ファイル
+
+- `Views/DynamicEntity/Index.cshtml`
+- `Views/DynamicEntity/FormPage.cshtml`
+- `Views/Shared/_Layout.cshtml`
+- `Program.cs`（デフォルトルート変更）
+
+### 21.6 検証結果
+
+| 項目 | 結果 |
+|------|------|
+| `dotnet build` | ✅ 成功（0 エラー） |
+| URL リセットバグ（New Page） | ✅ `_List.cshtml` 移動により検索・フィルター状態を保持 |
+| URL リセットバグ（保存後） | ✅ `returnUrl` へのリダイレクトで状態を保持 |
+| Cancel ボタン | ✅ returnUrl 対応済み |
+| パンくず重複 | ✅ 重複なし（条件付き表示） |
+| Dashboard 表示 | ✅ 統計カード正常描画 |
+| HOME → Dashboard | ✅ パンくず・サイドバー更新済み |
