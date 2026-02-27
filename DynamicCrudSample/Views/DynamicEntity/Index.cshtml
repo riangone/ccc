@@ -12,7 +12,6 @@
     var filterColClass = $"md:grid-cols-{filterCols}";
     var orderedFilters = Model.Meta.GetOrderedFilters().ToList();
     IReadOnlyList<BreadcrumbItem> breadcrumbs = Model.BreadcrumbChain ?? new List<BreadcrumbItem>();
-    var currentReturnUrl = Url.Action("Index", "DynamicEntity", new { entity = Model.Entity });
 }
 
 <div class="space-y-4">
@@ -23,8 +22,8 @@
             <ol class="flex flex-wrap items-center gap-1.5">
                 <li>
                     <a class="link link-hover"
-                       asp-controller="Home"
-                       asp-action="Index">Home</a>
+                       asp-controller="Dashboard"
+                       asp-action="Index">Dashboard</a>
                 </li>
                 @foreach (var crumb in breadcrumbs)
                 {
@@ -38,7 +37,7 @@
             </ol>
         </nav>
 
-        @* Newボタン + タイトル（ボタン左側） *@
+        @* Newボタン（モーダル） + タイトル。"New Page" は _List.cshtml 内に移動（HTMX でstate付きURLを維持するため） *@
         <div class="flex items-center gap-3">
             <button class="btn btn-primary btn-sm"
                 hx-get="@Url.Action("CreateForm", "DynamicEntity", new { entity = Model.Entity, mode = "modal", returnUrl = Model.ReturnUrl })"
@@ -46,10 +45,6 @@
                 hx-swap="innerHTML">
                 New
             </button>
-            <a class="btn btn-outline btn-sm"
-               href="@Url.Action("CreatePage", "DynamicEntity", new { entity = Model.Entity, returnUrl = currentReturnUrl })">
-                New Page
-            </a>
             <h1 class="text-2xl font-bold">@title</h1>
         </div>
 

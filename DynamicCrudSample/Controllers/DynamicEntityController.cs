@@ -223,7 +223,8 @@ public class DynamicEntityController : Controller
         });
         if (isPageMode)
         {
-            return RedirectToAction(nameof(Index), new { entity });
+            // returnUrl が指定されている場合は検索・ソート状態を維持して戻る
+            return Redirect(returnUrl ?? Url.Action(nameof(Index), new { entity })!);
         }
 
         var total = await _repo.CountAsync(entity, "");
@@ -327,7 +328,8 @@ public class DynamicEntityController : Controller
         });
         if (isPageMode)
         {
-            return RedirectToAction(nameof(Index), new { entity });
+            // returnUrl が指定されている場合は検索・ソート状態を維持して戻る
+            return Redirect(returnUrl ?? Url.Action(nameof(Index), new { entity })!);
         }
 
         var total = await _repo.CountAsync(entity, "");

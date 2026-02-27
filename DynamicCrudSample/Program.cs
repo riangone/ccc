@@ -5,6 +5,7 @@
 using System.Data;
 using System.Globalization;
 using DynamicCrudSample.Data;
+using DynamicCrudSample.Models;
 using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
 using DynamicCrudSample.Services.Dialect;
@@ -44,6 +45,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddSingleton<IEntityMetadataProvider, EntityMetadataProvider>();
+builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>();
 
 // ===== データベースプロバイダー設定 =====
 // appsettings.json の "DatabaseProvider" で "sqlite"（既定）または "sqlserver" を指定してください。
@@ -111,6 +113,6 @@ app.UseAuthorization();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=DynamicEntity}/{action=Index}/{id?}");
+    pattern: "{controller=Dashboard}/{action=Index}/{id?}");
 
 app.Run();

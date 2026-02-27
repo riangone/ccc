@@ -1,0 +1,84 @@
+# ダッシュボード統計設定
+# 各エントリが Dashboard ページの統計カードとして表示されます。
+#
+# フィールド:
+#   label      - 表示ラベル（デフォルト言語）
+#   labelI18n  - ロケール別ラベル（省略可）
+#   entity     - entities.yml で定義したエンティティキー名
+#   aggregate  - count / sum / avg のいずれか
+#   column     - sum / avg の場合に集計するカラム名
+#   filter     - WHERE 句（省略可）
+#   icon       - アイコン絵文字（省略可）
+#   color      - DaisyUI バッジカラークラス（省略可）
+
+stats:
+  - label: Artists
+    labelI18n:
+      en-US: Artists
+      zh-CN: 艺术家
+      ja-JP: アーティスト
+    entity: artist
+    aggregate: count
+    icon: "🎵"
+    color: badge-primary
+
+  - label: Albums
+    labelI18n:
+      en-US: Albums
+      zh-CN: 专辑
+      ja-JP: アルバム
+    entity: album
+    aggregate: count
+    icon: "💿"
+    color: badge-secondary
+
+  - label: Tracks
+    labelI18n:
+      en-US: Tracks
+      zh-CN: 曲目
+      ja-JP: トラック
+    entity: track
+    aggregate: count
+    icon: "🎸"
+    color: badge-accent
+
+  - label: Customers
+    labelI18n:
+      en-US: Customers
+      zh-CN: 客户
+      ja-JP: 顧客
+    entity: customer
+    aggregate: count
+    icon: "👥"
+    color: badge-info
+
+  - label: Invoices
+    labelI18n:
+      en-US: Invoices
+      zh-CN: 发票
+      ja-JP: 請求書
+    entity: invoice
+    aggregate: count
+    icon: "📄"
+    color: badge-warning
+
+  - label: Total Revenue
+    labelI18n:
+      en-US: Total Revenue
+      zh-CN: 总收入
+      ja-JP: 総売上
+    entity: invoice
+    aggregate: sum
+    column: Total
+    icon: "💰"
+    color: badge-success
+
+  - label: Employees
+    labelI18n:
+      en-US: Employees
+      zh-CN: 员工
+      ja-JP: 従業員
+    entity: employee
+    aggregate: count
+    icon: "🧑‍💼"
+    color: badge-neutral

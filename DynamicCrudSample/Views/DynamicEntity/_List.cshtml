@@ -29,8 +29,12 @@
 
 <div class="card bg-base-100 shadow">
     <div class="card-body space-y-4">
-        <div class="flex items-center gap-2">
-            <span class="text-sm">Page Size:</span>
+        <div class="flex items-center gap-2 flex-wrap">
+            <a class="btn btn-outline btn-sm"
+               href="@Url.Action("CreatePage", "DynamicEntity", new { entity = Model.Entity, returnUrl = currentReturnUrl })">
+                New Page
+            </a>
+            <span class="text-sm ml-2">Page Size:</span>
             <select class="select select-bordered select-sm w-24"
                     hx-get="@Url.Action("ListPartial", new { cursor = (string?)null })"
                     hx-include="#filter-form"

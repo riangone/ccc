@@ -77,7 +77,12 @@
 
                 <div class="md:col-span-2 flex gap-2">
                     <button type="submit" class="btn btn-primary">@(isEdit ? "Update" : "Create")</button>
-                    <a class="btn btn-ghost" href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">Cancel</a>
+                    @{
+                        var cancelUrl = Context.Request.Query["returnUrl"].ToString() is { Length: > 0 } cancelReturnUrl
+                            ? cancelReturnUrl
+                            : Url.Action("Index", "DynamicEntity", new { entity = Model.Entity });
+                    }
+                    <a class="btn btn-ghost" href="@cancelUrl">Cancel</a>
                 </div>
             </form>
         }

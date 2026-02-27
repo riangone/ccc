@@ -15,7 +15,7 @@
     <nav aria-label="Breadcrumb" class="text-sm text-base-content/60">
         <ol class="flex flex-wrap items-center gap-1.5">
             <li>
-                <a class="link link-hover" asp-controller="Home" asp-action="Index">Home</a>
+                <a class="link link-hover" asp-controller="Dashboard" asp-action="Index">Dashboard</a>
             </li>
             @foreach (var crumb in breadcrumbs)
             {
@@ -24,11 +24,14 @@
                     <a class="link link-hover" href="@crumb.Url">@crumb.Label</a>
                 </li>
             }
-            <li aria-hidden="true">/</li>
-            <li>
-                <a class="link link-hover"
-                   href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">@Model.Meta.GetDisplayName()</a>
-            </li>
+            @if (breadcrumbs.Count == 0)
+            {
+                <li aria-hidden="true">/</li>
+                <li>
+                    <a class="link link-hover"
+                       href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">@Model.Meta.GetDisplayName()</a>
+                </li>
+            }
             <li aria-hidden="true">/</li>
             <li class="font-semibold text-base-content">@formLabel</li>
         </ol>

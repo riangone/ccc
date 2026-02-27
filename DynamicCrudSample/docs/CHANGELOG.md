@@ -1,5 +1,115 @@
 # CHANGELOG
 
+## 2026-02-27（Dashboard・URLリセット修正・パンくず修正）
+
+### 追加
+
+#### 1. Dashboard 画面（`Controllers/DashboardController.cs`、`Views/Dashboard/Index.cshtml`）
+
+アプリのトップページを **Dashboard** に変更しました。
+YAML 設定（`config/dashboard.yml`）で定義した統計情報を DB から集計してカード形式で表示します。
+
+**統計定義 YAML（`config/dashboard.yml`）**
+
+```yaml
+stats:
+  - label: Artists
+    labelI18n: { en-US: Artists, zh-CN: 艺术家, ja-JP: アーティスト }
+    entity: artist
+    aggregate: count       # count / sum / avg
+    icon: "🎵"
+    color: badge-primary
+
+  - label: Total Revenue
+    entity: invoice
+    aggregate: sum
+    column: Total          # sum / avg の場合に必須
+    icon: "💰"
+    color: badge-success
+```
+
+| フィールド | 説明 |
+|-----------|------|
+| `entity` | entities.yml で定義したエンティティキー |
+| `aggregate` | `count` / `sum` / `avg` |
+| `column` | `sum` / `avg` の対象カラム |
+| `filter` | WHERE 句（任意）|
+| `icon` | アイコン絵文字 |
+| `color` | DaisyUI バッジカラークラス |
+
+**新規ファイル:**
+- `Models/DashboardConfig.cs`（`DashboardConfig` / `DashboardStatDefinition` モデル）
+- `Services/DashboardConfigProvider.cs`（`IDashboardConfigProvider` + 実装）
+- `Controllers/DashboardController.cs`（集計クエリ実行）
+- `Views/Dashboard/Index.cshtml`（統計カード表示）
+- `config/dashboard.yml`（デフォルト統計定義）
+
+#### 2. サイドバーに Dashboard リンク追加（`Views/Shared/_Layout.cshtml`）
+
+サイドメニューの最上部に Dashboard リンクを追加しました。
+現在 Dashboard 画面のとき `active` スタイルが適用されます。
+
+### 修正
+
+#### 1. URL リセットバグ（"New Page" ボタン）
+
+**原因**: `Index.cshtml` の "New Page" ボタンの `returnUrl` は `entity` だけのシンプルな URL で、HTMX によるフィルター更新後も更新されなかった。
+
+**修正**: "New Page" ボタンを `Index.cshtml` から `_List.cshtml` に移動しました。
+`_List.cshtml` は HTMX によって毎回再描画されるため、常に最新の `currentReturnUrl`（検索・ソート・フィルター状態を含む）を使用します。
+
+#### 2. 保存後 URL リセットバグ（Create / Edit POST）
+
+**原因**: ページモードで保存成功後に `return RedirectToAction(nameof(Index), new { entity })` と状態なしの基本 URL にリダイレクトしていた。
+
+**修正**: `returnUrl` が存在する場合はそこにリダイレクト、なければ基本 Index にフォールバック。
+
+```csharp
+// before
+return RedirectToAction(nameof(Index), new { entity });
+
+// after
+return Redirect(returnUrl ?? Url.Action(nameof(Index), new { entity })!);
+```
+
+影響: `DynamicEntityController.Create` (POST) / `DynamicEntityController.Edit` (POST)
+
+#### 3. Cancel ボタン URL リセット（`_Form.cshtml`）
+
+ページモードの Cancel ボタンが `returnUrl` を無視して基本 Index に遷移していた問題を修正しました。
+`Context.Request.Query["returnUrl"]` が存在する場合はそこに遷移します。
+
+#### 4. パンくずリスト重複バグ（`FormPage.cshtml`）
+
+**原因**: `BuildBreadcrumbChain(returnUrl)` が既にエンティティのパンくずを生成しているにもかかわらず、`FormPage.cshtml` でエンティティリンクをハードコードしていたため「Customer / Customer / Edit」のような重複が発生していた。
+
+**修正**: パンくずチェーンが存在する場合（returnUrl あり）はハードコードのリンクを省略し、パンくずチェーンが空の場合（直接ナビゲーション時）のみ表示するよう変更。
+
+```razor
+@if (breadcrumbs.Count == 0)
+{
+    <li><a href="@Url.Action("Index", ...)">@Model.Meta.GetDisplayName()</a></li>
+}
+```
+
+#### 5. パンくず "Home" → "Dashboard" への変更
+
+`Index.cshtml` / `FormPage.cshtml` のパンくず最上位を `Home` から `Dashboard` に変更しました。
+
+### 変更
+
+#### デフォルトルートを Dashboard に変更（`Program.cs`）
+
+```csharp
+// before
+app.MapControllerRoute(..., pattern: "{controller=DynamicEntity}/{action=Index}/{id?}");
+
+// after
+app.MapControllerRoute(..., pattern: "{controller=Dashboard}/{action=Index}/{id?}");
+```
+
+---
+
 ## 2026-02-27（SQL Server対応・全Chinook YAML・UXバグ修正・フック＆確認ダイアログ）
 
 ### 追加

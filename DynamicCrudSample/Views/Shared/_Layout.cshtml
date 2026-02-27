@@ -133,6 +133,18 @@
                     </div>
 
                     <ul class="menu p-3 gap-1">
+                        @{
+                            var isDashboard = string.Equals(
+                                Context.Request.RouteValues["controller"]?.ToString(),
+                                "Dashboard",
+                                StringComparison.OrdinalIgnoreCase);
+                        }
+                        <li>
+                            <a class="@(isDashboard ? "active" : "")"
+                               asp-controller="Dashboard"
+                               asp-action="Index">Dashboard</a>
+                        </li>
+                        <li class="menu-title mt-1"><span>Entities</span></li>
                         @foreach (var definition in entityDefinitions)
                         {
                             var isActive = string.Equals(
