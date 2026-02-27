@@ -197,7 +197,7 @@
                                         Edit
                                     </button>
                                     <a class="btn btn-xs btn-ghost"
-                                       href="@Url.Action("EditPage", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key] })">
+                                       href="@Url.Action("EditPage", "DynamicEntity", new { entity = Model.Entity, id = ((IDictionary<string, object>)item)[Model.Meta.Key], returnUrl = currentReturnUrl })">
                                         Edit Page
                                     </a>
                                     <button class="btn btn-xs btn-error"

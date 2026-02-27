@@ -56,6 +56,83 @@
                         {
                             <input type="text" name="@name" value="@(value ?? "")" class="input input-bordered w-full" readonly disabled />
                         }
+                        else if (def.ForeignKey != null && def.ForeignKey.Picker)
+                        {
+                            @* 単一選択ピッカー *@
+                            var fkId = value?.ToString() ?? "";
+                            var fkLabel = fkId;
+                            if (!string.IsNullOrEmpty(fkId) && Model.ForeignKeyData.TryGetValue(name, out var fkPickItems))
+                            {
+                                foreach (var fkItem in fkPickItems)
+                                {
+                                    var d = (IDictionary<string, object>)fkItem;
+                                    if (d.TryGetValue("Id", out var rawId) && rawId?.ToString() == fkId)
+                                    {
+                                        fkLabel = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? fkId : fkId;
+                                        break;
+                                    }
+                                }
+                            }
+                            <div class="flex gap-2 items-center">
+                                <input type="hidden" name="@name" id="picker-value-@name" value="@fkId" />
+                                <input type="text" id="picker-display-@name" class="input input-bordered flex-1"
+                                       readonly placeholder="Browse で選択..." value="@fkLabel" />
+                                <button type="button" class="btn btn-outline btn-sm"
+                                        data-picker-field="@name"
+                                        data-picker-entity="@def.ForeignKey.Entity"
+                                        data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                                        data-picker-multi="false"
+                                        onclick="openEntityPicker(this)">
+                                    Browse...
+                                </button>
+                                @if (!string.IsNullOrEmpty(fkId))
+                                {
+                                    <button type="button" class="btn btn-ghost btn-sm"
+                                            onclick="clearPickerValue('@name')">✕</button>
+                                }
+                            </div>
+                        }
+                        else if (def.ForeignKey != null && def.ForeignKey.MultiPicker)
+                        {
+                            @* 複数選択ピッカー *@
+                            var rawIds = (value?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            var chipLabels = new Dictionary<string, string>();
+                            if (Model.ForeignKeyData.TryGetValue(name, out var fkMultiItems))
+                            {
+                                foreach (var fkItem in fkMultiItems)
+                                {
+                                    var d = (IDictionary<string, object>)fkItem;
+                                    if (d.TryGetValue("Id", out var rawId) && rawId != null)
+                                    {
+                                        var sid = rawId.ToString()!;
+                                        var lbl = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? sid : sid;
+                                        chipLabels[sid] = lbl;
+                                    }
+                                }
+                            }
+                            <div>
+                                <div id="picker-chips-@name" class="flex flex-wrap gap-1 mb-2 min-h-8">
+                                    @foreach (var pid in rawIds)
+                                    {
+                                        var chipLbl = chipLabels.TryGetValue(pid, out var cl) ? cl : pid;
+                                        <div class="badge badge-neutral gap-1" data-id="@pid">
+                                            @chipLbl
+                                            <button type="button"
+                                                    onclick="removePickerChip('@name', '@pid', this.parentElement)">✕</button>
+                                        </div>
+                                    }
+                                </div>
+                                <input type="hidden" name="@name" id="picker-value-@name" value="@(value?.ToString() ?? "")" />
+                                <button type="button" class="btn btn-outline btn-sm"
+                                        data-picker-field="@name"
+                                        data-picker-entity="@def.ForeignKey.Entity"
+                                        data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                                        data-picker-multi="true"
+                                        onclick="openEntityPicker(this)">
+                                    + Browse...
+                                </button>
+                            </div>
+                        }
                         else if (def.ForeignKey != null && Model.ForeignKeyData.TryGetValue(name, out var fkItems))
                         {
                             <select name="@name" class="select select-bordered w-full">
@@ -175,6 +252,83 @@
                         @if (!def.Editable)
                         {
                             <input type="text" name="@name" value="@(value ?? "")" class="input input-bordered w-full" readonly disabled />
+                        }
+                        else if (def.ForeignKey != null && def.ForeignKey.Picker)
+                        {
+                            @* 単一選択ピッカー *@
+                            var fkId = value?.ToString() ?? "";
+                            var fkLabel = fkId;
+                            if (!string.IsNullOrEmpty(fkId) && Model.ForeignKeyData.TryGetValue(name, out var fkPickItems))
+                            {
+                                foreach (var fkItem in fkPickItems)
+                                {
+                                    var d = (IDictionary<string, object>)fkItem;
+                                    if (d.TryGetValue("Id", out var rawId) && rawId?.ToString() == fkId)
+                                    {
+                                        fkLabel = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? fkId : fkId;
+                                        break;
+                                    }
+                                }
+                            }
+                            <div class="flex gap-2 items-center">
+                                <input type="hidden" name="@name" id="picker-value-@name" value="@fkId" />
+                                <input type="text" id="picker-display-@name" class="input input-bordered flex-1"
+                                       readonly placeholder="Browse で選択..." value="@fkLabel" />
+                                <button type="button" class="btn btn-outline btn-sm"
+                                        data-picker-field="@name"
+                                        data-picker-entity="@def.ForeignKey.Entity"
+                                        data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                                        data-picker-multi="false"
+                                        onclick="openEntityPicker(this)">
+                                    Browse...
+                                </button>
+                                @if (!string.IsNullOrEmpty(fkId))
+                                {
+                                    <button type="button" class="btn btn-ghost btn-sm"
+                                            onclick="clearPickerValue('@name')">✕</button>
+                                }
+                            </div>
+                        }
+                        else if (def.ForeignKey != null && def.ForeignKey.MultiPicker)
+                        {
+                            @* 複数選択ピッカー *@
+                            var rawIds = (value?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            var chipLabels = new Dictionary<string, string>();
+                            if (Model.ForeignKeyData.TryGetValue(name, out var fkMultiItems))
+                            {
+                                foreach (var fkItem in fkMultiItems)
+                                {
+                                    var d = (IDictionary<string, object>)fkItem;
+                                    if (d.TryGetValue("Id", out var rawId) && rawId != null)
+                                    {
+                                        var sid = rawId.ToString()!;
+                                        var lbl = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? sid : sid;
+                                        chipLabels[sid] = lbl;
+                                    }
+                                }
+                            }
+                            <div>
+                                <div id="picker-chips-@name" class="flex flex-wrap gap-1 mb-2 min-h-8">
+                                    @foreach (var pid in rawIds)
+                                    {
+                                        var chipLbl = chipLabels.TryGetValue(pid, out var cl) ? cl : pid;
+                                        <div class="badge badge-neutral gap-1" data-id="@pid">
+                                            @chipLbl
+                                            <button type="button"
+                                                    onclick="removePickerChip('@name', '@pid', this.parentElement)">✕</button>
+                                        </div>
+                                    }
+                                </div>
+                                <input type="hidden" name="@name" id="picker-value-@name" value="@(value?.ToString() ?? "")" />
+                                <button type="button" class="btn btn-outline btn-sm"
+                                        data-picker-field="@name"
+                                        data-picker-entity="@def.ForeignKey.Entity"
+                                        data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                                        data-picker-multi="true"
+                                        onclick="openEntityPicker(this)">
+                                    + Browse...
+                                </button>
+                            </div>
                         }
                         else if (def.ForeignKey != null && Model.ForeignKeyData.TryGetValue(name, out var fkItems))
                         {

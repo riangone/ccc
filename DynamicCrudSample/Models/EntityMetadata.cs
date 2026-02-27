@@ -44,6 +44,10 @@ public class ForeignKeyDefinition
 {
     public string Entity { get; set; } = default!;
     public string DisplayColumn { get; set; } = "Id";
+    // ドロップダウンの代わりにピッカーモーダルで選択するか（単一選択）
+    public bool Picker { get; set; }
+    // ピッカーモーダルで複数選択するか
+    public bool MultiPicker { get; set; }
 }
 
 public class JoinDefinition

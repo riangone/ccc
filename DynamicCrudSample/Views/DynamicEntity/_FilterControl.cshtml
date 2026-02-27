@@ -91,6 +91,95 @@
             <input type="date" name="@($"{Model.Name}_to")" value="@to" class="input input-bordered w-full" />
         </div>
         break;
+    case "entity-picker":
+        @* 単一選択ピッカー（フィルター用） *@
+        {
+            string pickerLabel = current ?? "";
+            if (!string.IsNullOrEmpty(current) && Model.Filter.ForeignKey != null
+                && ViewBag.ForeignKeyData is Dictionary<string, IEnumerable<dynamic>> fkPData
+                && fkPData.TryGetValue(Model.Name, out var fkPItems))
+            {
+                foreach (var item in fkPItems)
+                {
+                    var dict = (IDictionary<string, object>)item;
+                    if (dict.TryGetValue("Id", out var rawId) && rawId?.ToString() == current)
+                    {
+                        pickerLabel = dict.TryGetValue(Model.Filter.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? current : current;
+                        break;
+                    }
+                }
+            }
+            <div class="flex gap-2 items-center">
+                <input type="hidden" name="@Model.Name" id="picker-value-@Model.Name" value="@current" />
+                <span id="picker-display-@Model.Name"
+                      class="input input-bordered flex-1 flex items-center text-sm cursor-default">
+                    @(string.IsNullOrEmpty(pickerLabel) ? "(All)" : pickerLabel)
+                </span>
+                <button type="button" class="btn btn-sm btn-outline"
+                        data-picker-field="@Model.Name"
+                        data-picker-entity="@Model.Filter.ForeignKey?.Entity"
+                        data-picker-display-col="@Model.Filter.ForeignKey?.DisplayColumn"
+                        data-picker-multi="false"
+                        onclick="openEntityPicker(this)">
+                    Browse...
+                </button>
+                @if (!string.IsNullOrEmpty(current))
+                {
+                    <button type="button" class="btn btn-sm btn-ghost"
+                            onclick="clearPickerFilterValue('@Model.Name')">✕</button>
+                }
+            </div>
+        }
+        break;
+    case "entity-multi-picker":
+        @* 複数選択ピッカー（フィルター用） *@
+        {
+            var entityPkrDisplayCol = Model.Filter.ForeignKey?.DisplayColumn ?? "Id";
+            var entityPkrLabels = new Dictionary<string, string>();
+            if (Model.Filter.ForeignKey != null
+                && ViewBag.ForeignKeyData is Dictionary<string, IEnumerable<dynamic>> fkMPData
+                && fkMPData.TryGetValue(Model.Name, out var fkMPItems))
+            {
+                foreach (var item in fkMPItems)
+                {
+                    var dict = (IDictionary<string, object>)item;
+                    if (dict.TryGetValue("Id", out var rawId) && rawId != null)
+                    {
+                        var sid = rawId.ToString()!;
+                        var lbl = dict.TryGetValue(entityPkrDisplayCol, out var lv) ? lv?.ToString() ?? sid : sid;
+                        entityPkrLabels[sid] = lbl;
+                    }
+                }
+            }
+            <div>
+                <div id="picker-chips-@Model.Name" class="flex flex-wrap gap-1 mb-1 min-h-6">
+                    @foreach (var v in values)
+                    {
+                        var chipLbl = entityPkrLabels.TryGetValue(v, out var cl) ? cl : v;
+                        <div class="badge badge-neutral gap-1 text-xs" data-id="@v">
+                            @chipLbl
+                            <button type="button"
+                                    onclick="removePickerChip('@Model.Name', '@v', this.parentElement)">✕</button>
+                        </div>
+                    }
+                </div>
+                <input type="hidden" name="@Model.Name" id="picker-value-@Model.Name" value="@current" />
+                <button type="button" class="btn btn-sm btn-outline"
+                        data-picker-field="@Model.Name"
+                        data-picker-entity="@Model.Filter.ForeignKey?.Entity"
+                        data-picker-display-col="@Model.Filter.ForeignKey?.DisplayColumn"
+                        data-picker-multi="true"
+                        onclick="openEntityPicker(this)">
+                    + Browse...
+                </button>
+                @if (values.Count > 0)
+                {
+                    <button type="button" class="btn btn-sm btn-ghost ml-1"
+                            onclick="clearPickerFilterValue('@Model.Name')">Clear</button>
+                }
+            </div>
+        }
+        break;
     default:
         <input type="text" name="@Model.Name" value="@current" class="input input-bordered w-full" />
         break;

@@ -2,18 +2,37 @@
    このビューは画面表示と操作導線を担当します。
    データバインディング名や hx-* 属性を変更する場合は、コントローラ側との整合を必ず確認してください。 *@
 
+@using DynamicCrudSample.Controllers
 @model DynamicCrudSample.Controllers.DynamicFormViewModel
 @{
     ViewData["Title"] = Model.Meta.GetDisplayName() + " Form";
+    IReadOnlyList<BreadcrumbItem> breadcrumbs = Model.BreadcrumbChain ?? new List<BreadcrumbItem>();
+    var formLabel = Model.Item == null ? "Create" : "Edit";
 }
 
 <div class="space-y-4">
-    <div class="breadcrumbs text-sm">
-        <ul>
-            <li><a href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">@Model.Meta.GetDisplayName()</a></li>
-            <li>@(Model.Item == null ? "Create" : "Edit")</li>
-        </ul>
-    </div>
+    @* パンくずナビ（タイトルの上） *@
+    <nav aria-label="Breadcrumb" class="text-sm text-base-content/60">
+        <ol class="flex flex-wrap items-center gap-1.5">
+            <li>
+                <a class="link link-hover" asp-controller="Home" asp-action="Index">Home</a>
+            </li>
+            @foreach (var crumb in breadcrumbs)
+            {
+                <li aria-hidden="true">/</li>
+                <li>
+                    <a class="link link-hover" href="@crumb.Url">@crumb.Label</a>
+                </li>
+            }
+            <li aria-hidden="true">/</li>
+            <li>
+                <a class="link link-hover"
+                   href="@Url.Action("Index", "DynamicEntity", new { entity = Model.Entity })">@Model.Meta.GetDisplayName()</a>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li class="font-semibold text-base-content">@formLabel</li>
+        </ol>
+    </nav>
 
     @await Html.PartialAsync("_Form", Model)
 </div>

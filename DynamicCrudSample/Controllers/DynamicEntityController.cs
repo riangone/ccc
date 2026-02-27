@@ -160,7 +160,7 @@ public class DynamicEntityController : Controller
         return PartialView("_Form", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), mode));
     }
 
-    public async Task<IActionResult> CreatePage(string entity = "customer")
+    public async Task<IActionResult> CreatePage(string entity = "customer", string? returnUrl = null)
     {
         var meta = _meta.Get(entity);
         var accessDenied = RejectIfNotVisible(meta);
@@ -169,7 +169,8 @@ public class DynamicEntityController : Controller
             return accessDenied;
         }
         var fkData = await LoadForeignKeyDataForm(meta);
-        return View("FormPage", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), "page"));
+        var breadcrumbs = BuildBreadcrumbChain(returnUrl);
+        return View("FormPage", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), "page", breadcrumbs));
     }
 
     [HttpPost]
@@ -240,7 +241,7 @@ public class DynamicEntityController : Controller
         return PartialView("_Form", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>(), mode));
     }
 
-    public async Task<IActionResult> EditPage(string entity, int id)
+    public async Task<IActionResult> EditPage(string entity, int id, string? returnUrl = null)
     {
         var meta = _meta.Get(entity);
         var accessDenied = RejectIfNotVisible(meta);
@@ -250,7 +251,8 @@ public class DynamicEntityController : Controller
         }
         var item = await _repo.GetByIdAsync(entity, id);
         var fkData = await LoadForeignKeyDataForm(meta);
-        return View("FormPage", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>(), "page"));
+        var breadcrumbs = BuildBreadcrumbChain(returnUrl);
+        return View("FormPage", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>(), "page", breadcrumbs));
     }
 
     [HttpPost]
@@ -345,6 +347,31 @@ public class DynamicEntityController : Controller
                 returnUrl));
     }
 
+    // エンティティ選択ピッカーモーダル用の一覧を返します
+    public async Task<IActionResult> PickerList(
+        string entity,
+        string targetField = "",
+        string displayColumn = "Id",
+        bool multi = false,
+        string? search = null,
+        int page = 1,
+        int pageSize = 10)
+    {
+        var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
+
+        var itemsRaw = await _repo.GetAllAsync(entity, search, null, null, null, page, pageSize, fetchOneExtra: true);
+        var list = itemsRaw.ToList();
+        var hasMore = list.Count > pageSize;
+        if (hasMore) list = list.Take(pageSize).ToList();
+
+        return PartialView("_Picker", new PickerViewModel(entity, meta, list, targetField, displayColumn, multi, search, page, pageSize, hasMore));
+    }
+
     private DynamicListViewModel CreateListViewModel(
         string entity,
         EntityDefinition meta,
@@ -370,6 +397,8 @@ public class DynamicEntityController : Controller
             returnDisplayName = previousMeta.GetDisplayName();
         }
 
+        var breadcrumbChain = BuildBreadcrumbChain(returnUrl);
+
         return new DynamicListViewModel(
             entity,
             meta,
@@ -388,7 +417,41 @@ public class DynamicEntityController : Controller
             cursor,
             returnUrl,
             returnEntity,
-            returnDisplayName);
+            returnDisplayName,
+            breadcrumbChain);
+    }
+
+    // returnUrl の再帰チェーンを辿りパンくずリストを構築します
+    private IReadOnlyList<BreadcrumbItem> BuildBreadcrumbChain(string? returnUrl, int maxDepth = 8)
+    {
+        var chain = new List<BreadcrumbItem>();
+        var current = returnUrl;
+        while (!string.IsNullOrEmpty(current) && maxDepth-- > 0)
+        {
+            var queryStart = current.IndexOf('?');
+            var query = queryStart >= 0 ? current[(queryStart + 1)..] : string.Empty;
+            if (string.IsNullOrEmpty(query)) break;
+
+            var parsed = QueryHelpers.ParseQuery(query);
+            parsed.TryGetValue("entity", out var entityValues);
+            var entityName = entityValues.ToString();
+            if (string.IsNullOrEmpty(entityName)) break;
+
+            string label = entityName;
+            if (_meta.TryGet(entityName, out var pageMeta))
+            {
+                label = pageMeta.GetDisplayName();
+            }
+
+            chain.Add(new BreadcrumbItem(label, current));
+
+            parsed.TryGetValue("returnUrl", out var prevValues);
+            current = prevValues.ToString();
+            if (string.IsNullOrEmpty(current)) break;
+        }
+
+        chain.Reverse();
+        return chain;
     }
 
     private static string? ExtractEntityFromReturnUrl(string? returnUrl)
@@ -575,6 +638,8 @@ public class DynamicEntityController : Controller
     }
 }
 
+public record BreadcrumbItem(string Label, string Url);
+
 public record DynamicListViewModel(
     string Entity,
     EntityDefinition Meta,
@@ -593,7 +658,8 @@ public record DynamicListViewModel(
     string? Cursor = null,
     string? ReturnUrl = null,
     string? ReturnEntity = null,
-    string? ReturnDisplayName = null);
+    string? ReturnDisplayName = null,
+    IReadOnlyList<BreadcrumbItem>? BreadcrumbChain = null);
 
 public record DynamicFormViewModel(
     string Entity,
@@ -601,4 +667,17 @@ public record DynamicFormViewModel(
     dynamic? Item,
     Dictionary<string, IEnumerable<dynamic>> ForeignKeyData,
     Dictionary<string, string> Errors,
-    string Mode = "modal");
+    string Mode = "modal",
+    IReadOnlyList<BreadcrumbItem>? BreadcrumbChain = null);
+
+public record PickerViewModel(
+    string Entity,
+    EntityDefinition Meta,
+    IEnumerable<dynamic> Items,
+    string TargetField,
+    string DisplayColumn,
+    bool Multi,
+    string? Search,
+    int Page,
+    int PageSize,
+    bool HasMore);

@@ -169,8 +169,179 @@
         }
     </div>
 
+    @* エンティティ選択ピッカーモーダル（全ページ共通） *@
+    <dialog id="entity-picker-modal" class="modal">
+        <div class="modal-box max-w-3xl">
+            <div class="flex items-center justify-between mb-3">
+                <h3 id="entity-picker-title" class="font-bold text-lg">Select</h3>
+                <form method="dialog">
+                    <button class="btn btn-ghost btn-sm btn-circle">✕</button>
+                </form>
+            </div>
+            <div class="mb-3">
+                <input type="text" id="entity-picker-search"
+                       class="input input-bordered w-full"
+                       placeholder="Search..."
+                       oninput="entityPickerSearch(this.value)" />
+            </div>
+            <div id="entity-picker-content" class="min-h-32"></div>
+            @if (true)
+            {
+                @* 複数選択モード時の確定ボタン（単一選択では非表示） *@
+                <div id="entity-picker-multi-footer" class="mt-3 hidden">
+                    <form method="dialog">
+                        <button class="btn btn-primary">Done</button>
+                    </form>
+                </div>
+            }
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        // エンティティ選択ピッカー共通ロジック
+        var _pickerConfig = null;
+        var _pickerSearchTimer = null;
+
+        // ピッカーを開く（Browse ボタンの onclick から呼ばれる）
+        function openEntityPicker(btn) {
+            var fieldName = btn.dataset.pickerField;
+            var entity    = btn.dataset.pickerEntity;
+            var displayCol= btn.dataset.pickerDisplayCol || 'Id';
+            var multi     = btn.dataset.pickerMulti === 'true';
+
+            _pickerConfig = { fieldName: fieldName, entity: entity, displayCol: displayCol, multi: multi };
+
+            var title = document.getElementById('entity-picker-title');
+            if (title) title.textContent = 'Select ' + entity;
+
+            var footer = document.getElementById('entity-picker-multi-footer');
+            if (footer) footer.classList.toggle('hidden', !multi);
+
+            var searchEl = document.getElementById('entity-picker-search');
+            if (searchEl) searchEl.value = '';
+
+            loadPickerContent('', 1);
+            document.getElementById('entity-picker-modal').showModal();
+        }
+
+        // ピッカーコンテンツを HTMX で読み込む
+        function loadPickerContent(search, page) {
+            if (!_pickerConfig) return;
+            page = page || 1;
+            var cfg = _pickerConfig;
+            var url = '/DynamicEntity/PickerList'
+                + '?entity=' + encodeURIComponent(cfg.entity)
+                + '&targetField=' + encodeURIComponent(cfg.fieldName)
+                + '&displayColumn=' + encodeURIComponent(cfg.displayCol)
+                + '&multi=' + (cfg.multi ? 'true' : 'false')
+                + '&search=' + encodeURIComponent(search || '')
+                + '&page=' + page;
+            htmx.ajax('GET', url, { target: '#entity-picker-content', swap: 'innerHTML' });
+        }
+
+        // 検索入力のデバウンス
+        function entityPickerSearch(value) {
+            clearTimeout(_pickerSearchTimer);
+            _pickerSearchTimer = setTimeout(function () {
+                loadPickerContent(value, 1);
+            }, 300);
+        }
+
+        // ピッカーページング
+        function loadPickerPage(page) {
+            var searchEl = document.getElementById('entity-picker-search');
+            var search = searchEl ? searchEl.value : '';
+            loadPickerContent(search, page);
+        }
+
+        // テーブル行クリック時の選択処理
+        function pickerSelectFromRow(row) {
+            if (!_pickerConfig) return;
+            var id    = row.dataset.pickerId;
+            var label = row.dataset.pickerLabel;
+            var cfg   = _pickerConfig;
+
+            if (cfg.multi) {
+                // 複数選択: チップを追加（重複は無視）
+                var hidden = document.getElementById('picker-value-' + cfg.fieldName);
+                if (!hidden) return;
+                var vals = hidden.value ? hidden.value.split(',').filter(function(v) { return v !== ''; }) : [];
+                if (vals.indexOf(id) !== -1) return; // 既選択済み
+                vals.push(id);
+                hidden.value = vals.join(',');
+
+                var chips = document.getElementById('picker-chips-' + cfg.fieldName);
+                if (chips) {
+                    var chip = document.createElement('div');
+                    chip.className = 'badge badge-neutral gap-1';
+                    chip.dataset.id = id;
+                    chip.innerHTML = label
+                        + ' <button type="button" onclick="removePickerChip(\''
+                        + cfg.fieldName + '\',\'' + id.replace(/'/g, "\\'") + '\',this.parentElement)">✕</button>';
+                    chips.appendChild(chip);
+                }
+                // 複数選択モードではモーダルを閉じない
+            } else {
+                // 単一選択: 値とラベルをセットしてモーダルを閉じる
+                var hidden2 = document.getElementById('picker-value-' + cfg.fieldName);
+                var display = document.getElementById('picker-display-' + cfg.fieldName);
+                if (hidden2) hidden2.value = id;
+                if (display) {
+                    if (display.tagName === 'INPUT') {
+                        display.value = label;
+                    } else {
+                        display.textContent = label;
+                    }
+                }
+                document.getElementById('entity-picker-modal').close();
+            }
+        }
+
+        // ピッカーチップを削除する
+        function removePickerChip(fieldName, id, chipEl) {
+            var hidden = document.getElementById('picker-value-' + fieldName);
+            if (hidden) {
+                var vals = hidden.value.split(',').filter(function(v) { return v !== id && v !== ''; });
+                hidden.value = vals.join(',');
+            }
+            if (chipEl) chipEl.remove();
+        }
+
+        // 単一ピッカー値をクリア（フォーム用）
+        function clearPickerValue(fieldName) {
+            var hidden = document.getElementById('picker-value-' + fieldName);
+            var display = document.getElementById('picker-display-' + fieldName);
+            if (hidden) hidden.value = '';
+            if (display) {
+                if (display.tagName === 'INPUT') {
+                    display.value = '';
+                } else {
+                    display.textContent = '(All)';
+                }
+            }
+        }
+
+        // フィルター用ピッカー値クリア
+        function clearPickerFilterValue(fieldName) {
+            var hidden = document.getElementById('picker-value-' + fieldName);
+            var display = document.getElementById('picker-display-' + fieldName);
+            var chips = document.getElementById('picker-chips-' + fieldName);
+            if (hidden) hidden.value = '';
+            if (display) {
+                if (display.tagName === 'INPUT') {
+                    display.value = '';
+                } else {
+                    display.textContent = '(All)';
+                }
+            }
+            if (chips) chips.innerHTML = '';
+        }
+    </script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

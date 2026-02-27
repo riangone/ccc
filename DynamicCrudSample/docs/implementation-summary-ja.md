@@ -264,6 +264,93 @@
 対象:
 - `Controllers/AccountController.cs`
 
+## 15. UI改善（パンくず多段化・ボタン位置・エンティティ選択ピッカー）
+
+### 15.1 パンくず多段チェーン
+
+ページ遷移のたびに `returnUrl` クエリパラメータが入れ子になる構造を活用し、コントローラー側で `BuildBreadcrumbChain()` が再帰的に遡ることで全遷移履歴を `BreadcrumbItem` リストとして生成します。
+
+```
+Customer 一覧 → Invoice 一覧（returnUrl=Customer） → Track 一覧（returnUrl=Invoice の URL）
+↓ パンくず表示
+Home / Customer / Invoice / Track（現在）
+```
+
+対象ファイル:
+- `Controllers/DynamicEntityController.cs`（`BuildBreadcrumbChain`、`BreadcrumbItem`、`BreadcrumbChain` プロパティ追加）
+- `Views/DynamicEntity/Index.cshtml`（パンくずをタイトル上方に移動）
+- `Views/DynamicEntity/FormPage.cshtml`（多段パンくず対応）
+- `Views/DynamicEntity/_List.cshtml`（EditPage リンクへ `returnUrl` 引き渡し）
+- `Views/_ViewImports.cshtml`（`using DynamicCrudSample.Controllers` 追加）
+
+### 15.2 Newボタンをタイトル左側へ配置
+
+```
+変更前: [                タイトル ] [ New ] [ New Page ]
+変更後: [ New ] [ New Page ] [ タイトル              ]
+```
+
+対象ファイル:
+- `Views/DynamicEntity/Index.cshtml`
+
+### 15.3 エンティティ選択ピッカー
+
+フォームやフィルターの外部キー項目で、ドロップダウンの代わりに別エンティティの一覧モーダルを開いて行を選択できます。
+
+**YAMLによる設定方法:**
+
+```yaml
+# フォームフィールド — 単一選択
+ArtistId:
+  type: int
+  foreignKey:
+    entity: artist
+    displayColumn: Name
+    picker: true        # ドロップダウン→ピッカーモーダルへ
+
+# フォームフィールド — 複数選択（カンマ区切りで保存）
+Tags:
+  type: string
+  foreignKey:
+    entity: tag
+    displayColumn: Name
+    multiPicker: true
+
+# フィルター — 単一ピッカー
+ArtistId:
+  type: entity-picker
+  foreignKey:
+    entity: artist
+    displayColumn: Name
+
+# フィルター — 複数ピッカー
+GenreId:
+  type: entity-multi-picker
+  foreignKey:
+    entity: genre
+    displayColumn: Name
+```
+
+**動作フロー:**
+1. フォーム/フィルターの「Browse...」ボタンをクリック
+2. 全ページ共通の `#entity-picker-modal` が開く（DaisyUI dialog）
+3. HTMX が `GET /DynamicEntity/PickerList?entity=...&search=...&page=...` を呼び出し、テーブルを表示
+4. 検索ボックスへの入力でインクリメンタル検索（デバウンス 300ms）
+5. テーブル行クリックで選択
+   - 単一選択: 値をセットしてモーダルを閉じる
+   - 複数選択: チップとして追加。モーダルは「Done」ボタンで閉じる
+6. 選択済みチップの「✕」で個別削除可能
+
+**追加ファイル:**
+- `Views/DynamicEntity/_Picker.cshtml`（ピッカー用テーブル + ページングパーシャル）
+
+**変更ファイル:**
+- `Models/EntityMetadata.cs`（`ForeignKeyDefinition.Picker` / `MultiPicker` 追加）
+- `Controllers/DynamicEntityController.cs`（`PickerList` アクション、`PickerViewModel` 追加）
+- `Views/DynamicEntity/_Form.cshtml`（`picker`/`multiPicker` 分岐追加）
+- `Views/DynamicEntity/_FilterControl.cshtml`（`entity-picker`/`entity-multi-picker` タイプ追加）
+- `Views/Shared/_Layout.cshtml`（ピッカーモーダル HTML + JS 関数群追加）
+
 ## 12. YAML定義テンプレート
 ```yaml
 entities:

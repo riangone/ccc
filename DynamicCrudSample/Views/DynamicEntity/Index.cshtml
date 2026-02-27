@@ -11,46 +11,48 @@
     var filterCols = Math.Clamp(Model.Meta.Layout.Filters.Columns, 1, 6);
     var filterColClass = $"md:grid-cols-{filterCols}";
     var orderedFilters = Model.Meta.GetOrderedFilters().ToList();
+    IReadOnlyList<BreadcrumbItem> breadcrumbs = Model.BreadcrumbChain ?? new List<BreadcrumbItem>();
+    var currentReturnUrl = Url.Action("Index", "DynamicEntity", new { entity = Model.Entity });
 }
 
 <div class="space-y-4">
-    <div class="flex flex-col gap-3">
-        <div class="flex items-center justify-between">
-            <h1 class="text-2xl font-bold">@title</h1>
-            <div class="flex gap-2">
-                <button class="btn btn-primary"
-                    hx-get="@Url.Action("CreateForm", "DynamicEntity", new { entity = Model.Entity, mode = "modal", returnUrl = Model.ReturnUrl })"
-                    hx-target="#modal-form-content"
-                    hx-swap="innerHTML">
-                New
-            </button>
-            <a class="btn btn-outline"
-               href="@Url.Action("CreatePage", "DynamicEntity", new { entity = Model.Entity })">
-                New Page
-            </a>
-        </div>
+    <div class="flex flex-col gap-2">
+
+        @* パンくずナビ（タイトルの上） *@
         <nav aria-label="Breadcrumb" class="text-sm text-base-content/60">
-            <ol class="flex flex-wrap items-center gap-2">
+            <ol class="flex flex-wrap items-center gap-1.5">
                 <li>
-                    <a class="link link-hover text-muted"
+                    <a class="link link-hover"
                        asp-controller="Home"
                        asp-action="Index">Home</a>
                 </li>
-                <li aria-hidden="true">/</li>
-                <li>
-                    <span class="text-base-content/60">Entities</span>
-                </li>
-                <li aria-hidden="true">/</li>
-                @if (!string.IsNullOrEmpty(Model.ReturnDisplayName) && !string.IsNullOrEmpty(Model.ReturnUrl))
+                @foreach (var crumb in breadcrumbs)
                 {
-                    <li>
-                        <a class="link link-hover" href="@Model.ReturnUrl">@Model.ReturnDisplayName</a>
-                    </li>
                     <li aria-hidden="true">/</li>
+                    <li>
+                        <a class="link link-hover" href="@crumb.Url">@crumb.Label</a>
+                    </li>
                 }
+                <li aria-hidden="true">/</li>
                 <li class="font-semibold text-base-content">@title</li>
             </ol>
         </nav>
+
+        @* Newボタン + タイトル（ボタン左側） *@
+        <div class="flex items-center gap-3">
+            <button class="btn btn-primary btn-sm"
+                hx-get="@Url.Action("CreateForm", "DynamicEntity", new { entity = Model.Entity, mode = "modal", returnUrl = Model.ReturnUrl })"
+                hx-target="#modal-form-content"
+                hx-swap="innerHTML">
+                New
+            </button>
+            <a class="btn btn-outline btn-sm"
+               href="@Url.Action("CreatePage", "DynamicEntity", new { entity = Model.Entity, returnUrl = currentReturnUrl })">
+                New Page
+            </a>
+            <h1 class="text-2xl font-bold">@title</h1>
+        </div>
+
         @if (!string.IsNullOrEmpty(Model.ReturnUrl))
         {
             <div class="flex items-center gap-2 text-sm text-base-content/70">

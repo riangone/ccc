@@ -254,9 +254,10 @@ entities:
         foreignKey:
           entity: artist
           displayColumn: Name
+          picker: true  # ドロップダウンの代わりにピッカーモーダルを使用
     filters:
       ArtistId:
-        type: dropdown
+        type: entity-picker
         label: Artist
         expression: Album.ArtistId
         foreignKey:
@@ -482,6 +483,7 @@ entities:
         foreignKey:
           entity: customer
           displayColumn: LastName
+          picker: true  # 多数のCustomerからピッカーで選択
       InvoiceDate:
         type: date
         required: true

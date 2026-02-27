@@ -1,5 +1,80 @@
 # CHANGELOG
 
+## 2026-02-27（UI改善：パンくず多段化・Newボタン位置変更・エンティティ選択ピッカー）
+
+### 追加
+
+#### 1. パンくずの多段チェーン対応（`Controllers/DynamicEntityController.cs`）
+- `BuildBreadcrumbChain(returnUrl)` ヘルパーメソッドを追加
+- `returnUrl` クエリパラメータが入れ子になっていることを利用し、再帰的に遡って全遷移履歴を抽出
+- 例: Customer → Invoice → Track と遷移すると `Home / Customer / Invoice / Track（現在）` が自動生成される
+- `DynamicListViewModel` に `BreadcrumbChain` プロパティを追加
+- `DynamicFormViewModel` に `BreadcrumbChain` プロパティを追加
+- `CreatePage`・`EditPage` アクションに `returnUrl` パラメータを追加し、フォームページでもパンくずを表示
+
+#### 2. パンくずをタイトルの上方に配置（`Views/DynamicEntity/Index.cshtml`、`Views/DynamicEntity/FormPage.cshtml`）
+- パンくず `<nav>` を h1 タイトルより前に移動
+- `Model.BreadcrumbChain` を使って全遷移履歴をパンくずリンクとして表示
+- `Index.cshtml` の「New Page」ボタンに `returnUrl` を追加（現在のエンティティ一覧URLを引き渡し）
+- `FormPage.cshtml` も同様の多段パンくず表示に刷新
+
+#### 3. Newボタンをタイトルの左側に配置（`Views/DynamicEntity/Index.cshtml`）
+- 従来: タイトル左寄せ・ボタン右寄せ（`justify-between`）
+- 変更後: `[New] [New Page] [h1 タイトル]` の水平並び（`flex items-center gap-3`）
+
+#### 4. エンティティ選択ピッカー（新機能）
+
+**モデル（`Models/EntityMetadata.cs`）**
+- `ForeignKeyDefinition` に `Picker: bool`（単一選択）・`MultiPicker: bool`（複数選択）プロパティを追加
+
+**コントローラー（`Controllers/DynamicEntityController.cs`）**
+- `PickerList` アクションを追加：HTMX からピッカーテーブル用パーシャルを返す
+- `PickerViewModel` レコードを追加（Entity, Meta, Items, TargetField, DisplayColumn, Multi, Search, Page, PageSize, HasMore）
+- `BreadcrumbItem` レコードを追加
+
+**ビュー（`Views/DynamicEntity/_Form.cshtml`）**
+- `foreignKey.picker: true` の場合、ドロップダウンの代わりに「テキスト表示入力 + Browse ボタン + hidden input」を描画
+- `foreignKey.multiPicker: true` の場合、チップ（バッジ）形式で複数選択された値を表示。「+ Browse」で追加、各チップの✕で削除
+
+**ビュー（`Views/DynamicEntity/_FilterControl.cshtml`）**
+- `type: entity-picker`：単一選択ピッカーフィルター（Browse ボタン + hidden input + 選択済み表示 + クリアボタン）
+- `type: entity-multi-picker`：複数選択ピッカーフィルター（チップ表示 + Browse ボタン + Clear ボタン）
+
+**新規ファイル（`Views/DynamicEntity/_Picker.cshtml`）**
+- ピッカーモーダルのコンテンツ（テーブル + ページング）を描画するパーシャルビュー
+- テーブル行クリックで選択（行 `data-picker-id` / `data-picker-label` 属性から JS が値を取得）
+
+**レイアウト（`Views/Shared/_Layout.cshtml`）**
+- 全ページ共通のエンティティ選択ピッカーモーダル `#entity-picker-modal` を追加
+- ピッカー操作 JS 関数群を追加:
+  - `openEntityPicker(btn)` — Browse ボタンから設定を読み取ってモーダルを開く
+  - `loadPickerContent(search, page)` — HTMX で `PickerList` を呼んでテーブルを更新
+  - `entityPickerSearch(value)` — デバウンス300ms 付きインクリメンタル検索
+  - `loadPickerPage(page)` — ページング
+  - `pickerSelectFromRow(row)` — 行クリック時の単一/複数選択処理
+  - `removePickerChip(fieldName, id, el)` — チップ削除
+  - `clearPickerValue(fieldName)` — フォームピッカーのクリア
+  - `clearPickerFilterValue(fieldName)` — フィルターピッカーのクリア
+
+**ビューインポート（`Views/_ViewImports.cshtml`）**
+- `@using DynamicCrudSample.Controllers` を追加（`BreadcrumbItem` 型をビューで直接参照できるように）
+
+#### 5. `_List.cshtml` の「Edit Page」リンクに `returnUrl` を追加
+- `EditPage` リンクに `returnUrl = currentReturnUrl` を追加し、フォームページ側でもパンくずが正しく構築されるように対応
+
+#### 6. デモ用 YAML 設定を更新（`config/entities.yml`）
+- `album.forms.ArtistId` — `foreignKey.picker: true` を追加（ピッカー単一選択デモ）
+- `invoice.forms.CustomerId` — `foreignKey.picker: true` を追加（多数レコードからのピッカー選択デモ）
+- `album.filters.ArtistId` — `type: dropdown` → `type: entity-picker` に変更（フィルターピッカーデモ）
+
+### 検証結果
+1. `dotnet build` 成功（0 エラー / 8 警告はすべて既存の nullable 注釈警告）
+2. Customer → Invoice → Track の3段遷移でパンくずが `Home / Customer / Invoice / Track` と正しく表示されることを確認（設計ベース）
+3. Album フォームの ArtistId フィールドでピッカーモーダルが開き、選択値が hidden input へセットされる動作を設計確認
+4. `_ViewImports.cshtml` への `using` 追加でビュー内の `BreadcrumbItem` 型参照エラーが解消
+
+---
+
 ## 2026-02-27（エンティティ間ナビゲーション・状態復元・面パン強化）
 
 ### 追加
