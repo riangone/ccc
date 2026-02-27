@@ -2,6 +2,7 @@
 // このファイルはアプリの重要な構成要素を定義します。
 // 保守時は副作用を避けるため、公開シグネチャと呼び出し関係の整合性を維持してください。
 
+using System.Diagnostics.CodeAnalysis;
 using DynamicCrudSample.Models;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -12,6 +13,7 @@ public interface IEntityMetadataProvider
 {
     EntityDefinition Get(string entityName);
     IReadOnlyDictionary<string, EntityDefinition> GetAll();
+    bool TryGet(string entityName, [NotNullWhen(true)] out EntityDefinition? definition);
 }
 
 public class EntityMetadataProvider : IEntityMetadataProvider
@@ -60,4 +62,7 @@ public class EntityMetadataProvider : IEntityMetadataProvider
     public EntityDefinition Get(string entityName) => _entities[entityName];
 
     public IReadOnlyDictionary<string, EntityDefinition> GetAll() => _entities;
+
+    public bool TryGet(string entityName, [NotNullWhen(true)] out EntityDefinition? definition) =>
+        _entities.TryGetValue(entityName, out definition);
 }

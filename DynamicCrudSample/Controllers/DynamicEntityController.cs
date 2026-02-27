@@ -37,6 +37,13 @@ public class DynamicEntityController : Controller
         _logger = logger;
     }
 
+    private bool UserIsAdmin() => User?.IsInRole("Admin") ?? false;
+
+    private IActionResult? RejectIfNotVisible(EntityDefinition meta) =>
+        meta.IsPublic || UserIsAdmin()
+            ? null
+            : Forbid();
+
     public async Task<IActionResult> Index(
         string entity = "customer",
         string? search = null,
@@ -48,6 +55,11 @@ public class DynamicEntityController : Controller
     {
         // 初期画面表示。メタデータから検索条件を解釈し、一覧表示モデルを構築します。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         pageSize ??= meta.Paging.PageSize;
         var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
         var includeCount = ResolveCountEnabled(meta, count);
@@ -93,6 +105,11 @@ public class DynamicEntityController : Controller
     {
         // HTMXによる一覧部分更新。count有無・keyset有無をここで切り替えます。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         pageSize ??= meta.Paging.PageSize;
         var isKeyset = meta.Paging.Mode.Equals("keyset", StringComparison.OrdinalIgnoreCase);
         var includeCount = ResolveCountEnabled(meta, count);
@@ -116,6 +133,11 @@ public class DynamicEntityController : Controller
     {
         // 新規作成フォームの描画（モーダル/ページ両対応）。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var fkData = await LoadForeignKeyDataForm(meta);
         return PartialView("_Form", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), mode));
     }
@@ -123,6 +145,11 @@ public class DynamicEntityController : Controller
     public async Task<IActionResult> CreatePage(string entity = "customer")
     {
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var fkData = await LoadForeignKeyDataForm(meta);
         return View("FormPage", new DynamicFormViewModel(entity, meta, null, fkData, new Dictionary<string, string>(), "page"));
     }
@@ -132,6 +159,11 @@ public class DynamicEntityController : Controller
     {
         // 登録処理。CRUD本体と監査ログを同一トランザクションで実行します。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var (values, errors) = ConvertAndValidate(meta, form, isEdit: false);
         var isPageMode = mode.Equals("page", StringComparison.OrdinalIgnoreCase);
 
@@ -163,6 +195,11 @@ public class DynamicEntityController : Controller
     {
         // 既存レコードを読み込み、編集フォームを返します。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var item = await _repo.GetByIdAsync(entity, id);
         var fkData = await LoadForeignKeyDataForm(meta);
         return PartialView("_Form", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>(), mode));
@@ -171,6 +208,11 @@ public class DynamicEntityController : Controller
     public async Task<IActionResult> EditPage(string entity, int id)
     {
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var item = await _repo.GetByIdAsync(entity, id);
         var fkData = await LoadForeignKeyDataForm(meta);
         return View("FormPage", new DynamicFormViewModel(entity, meta, item, fkData, new Dictionary<string, string>(), "page"));
@@ -181,6 +223,11 @@ public class DynamicEntityController : Controller
     {
         // 更新処理。登録同様に監査ログと整合性を取るためTx内で実行します。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         var (values, errors) = ConvertAndValidate(meta, form, isEdit: true);
         var isPageMode = mode.Equals("page", StringComparison.OrdinalIgnoreCase);
 
@@ -214,6 +261,11 @@ public class DynamicEntityController : Controller
     {
         // 削除処理（論理/物理はRepository側で自動分岐）。
         var meta = _meta.Get(entity);
+        var accessDenied = RejectIfNotVisible(meta);
+        if (accessDenied != null)
+        {
+            return accessDenied;
+        }
         await ExecuteCrudTransactionAsync(async tx =>
         {
             await _repo.DeleteAsync(entity, id, tx);

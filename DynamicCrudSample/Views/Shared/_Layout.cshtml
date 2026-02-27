@@ -21,7 +21,9 @@
 <body class="min-h-screen bg-base-200">
     @{
         var showSidebar = User.Identity?.IsAuthenticated ?? false;
+        var isAdminUser = User?.IsInRole("Admin") ?? false;
         var entityDefinitions = EntityMetadataProvider.GetAll()
+            .Where(pair => isAdminUser || pair.Value.IsPublic)
             .OrderBy(pair => pair.Value.GetDisplayName(), StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -148,13 +150,16 @@
                                    asp-action="Index"
                                    asp-route-entity="@definition.Key">
                                     <span>@definition.Value.GetDisplayName()</span>
-                                    <span class="badge badge-sm @(definition.Value.IsPublic ? "badge-success" : "badge-ghost")">
-                                        @(definition.Value.IsPublic ? "Public" : "Private")
-                                    </span>
+                                    @if (isAdminUser)
+                                    {
+                                        <span class="badge badge-sm @(definition.Value.IsPublic ? "badge-success" : "badge-ghost")">
+                                            @(definition.Value.IsPublic ? "Public" : "Private")
+                                        </span>
+                                    }
                                 </a>
                             </li>
                         }
-                        @if (User.IsInRole("Admin"))
+                        @if (isAdminUser)
                         {
                             <li class="mt-2"><a asp-controller="Users" asp-action="Index">@L["Users"]</a></li>
                         }
