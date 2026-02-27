@@ -630,7 +630,44 @@ public class DashboardChartDefinition
 }
 ```
 
-### 20.5 YAML 設定リファレンス（`config/dashboard.yml`）
+### 20.5 ViewModel 定義（`Controllers/DashboardController.cs`）
+
+コントローラーファイル内で定義する View モデルです。
+
+```csharp
+// 統計カード 1 枚分
+public class DashboardStatViewModel
+{
+    public string Label      { get; set; } = "";   // 表示ラベル
+    public string Value      { get; set; } = "";   // 集計値（フォーマット済み文字列）
+    public string? Icon      { get; set; }         // 絵文字アイコン
+    public string? Color     { get; set; }         // DaisyUI バッジクラス
+    public string? EntityUrl { get; set; }         // クリック時の遷移先 URL
+}
+
+// グラフ 1 つ分
+public class DashboardChartViewModel
+{
+    public string Title        { get; set; } = ""; // グラフタイトル
+    public string Type         { get; set; } = "bar"; // bar/line/doughnut/pie
+    public string LabelsJson   { get; set; } = "[]";  // JSON 文字列配列
+    public string ValuesJson   { get; set; } = "[]";  // JSON 数値配列
+    public string? ColorBg     { get; set; }       // 単色背景（棒・折れ線用）
+    public string? ColorBorder { get; set; }       // 単色枠線（棒・折れ線用）
+    public string? ColorsJson  { get; set; }       // 複数色 JSON 配列（ドーナツ/円用）
+}
+
+// Index アクションが View に渡すルートモデル
+public class DashboardViewModel
+{
+    public List<DashboardStatViewModel>  Stats  { get; set; } = new();
+    public List<DashboardChartViewModel> Charts { get; set; } = new();
+}
+```
+
+### 20.6 YAML 設定リファレンス（`config/dashboard.yml`）
+
+#### 20.6.1 stats セクション（統計カード）
 
 ```yaml
 stats:
@@ -647,17 +684,21 @@ stats:
 
   # SUM 集計（column 必須）
   - label: Total Revenue
-    labelI18n:
-      en-US: Total Revenue
-      zh-CN: 总收入
-      ja-JP: 総売上
     entity: invoice
     aggregate: sum
     column: Total         # 集計するカラム名
     icon: "💰"
     color: badge-success
 
-  # フィルター付き集計
+  # AVG 集計
+  - label: Avg Invoice
+    entity: invoice
+    aggregate: avg
+    column: Total
+    icon: "📊"
+    color: badge-info
+
+  # WHERE 句付き集計
   - label: Active Tracks
     entity: track
     aggregate: count
@@ -667,17 +708,114 @@ stats:
 ```
 
 | フィールド | 型 | 必須 | 説明 |
-|-----------|-----|------|------|
+|-----------|-----|:----:|------|
 | `label` | string | ✅ | デフォルト言語ラベル |
 | `labelI18n` | map | — | ロケール別ラベル（`en-US` / `zh-CN` / `ja-JP`） |
 | `entity` | string | ✅ | `entities.yml` で定義したエンティティキー |
 | `aggregate` | string | ✅ | `count` / `sum` / `avg` |
-| `column` | string | `sum`/`avg` 時必須 | 集計対象カラム名 |
+| `column` | string | ※ | `sum` / `avg` 時必須 |
 | `filter` | string | — | WHERE 句（省略可） |
 | `icon` | string | — | アイコン絵文字 |
 | `color` | string | — | DaisyUI バッジカラークラス（例: `badge-primary`） |
 
-### 20.6 コントローラーの集計ロジック（`Controllers/DashboardController.cs`）
+#### 20.6.2 charts セクション（グラフ）
+
+```yaml
+charts:
+  # ── 折れ線グラフ：月別売上 ─────────────────────────────────────
+  - title: Monthly Revenue
+    titleI18n:
+      en-US: Monthly Revenue
+      ja-JP: 月別売上推移
+    type: line                                       # グラフ種別
+    entity: invoice
+    valueAggregate: sum
+    valueColumn: Total
+    groupExpression: "strftime('%Y-%m', InvoiceDate)" # GROUP BY 式
+    orderBy: label                                   # label / value
+    orderDir: asc                                    # asc / desc
+    limit: 24
+    colorBg: "rgba(99, 102, 241, 0.15)"              # 塗りつぶし色
+    colorBorder: "rgba(99, 102, 241, 1)"             # 線色
+
+  # ── ドーナツグラフ：ジャンル別（FK JOIN） ────────────────────────
+  - title: Tracks by Genre
+    type: doughnut
+    entity: track
+    valueAggregate: count
+    labelJoinEntity: genre        # JOIN 先エンティティ
+    labelJoinKey: GenreId         # 現テーブルの FK カラム
+    labelJoinDisplay: Name        # JOIN 先の表示カラム
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colors:                       # doughnut / pie 用複数色リスト
+      - "rgba(99, 102, 241, 0.85)"
+      - "rgba(16, 185, 129, 0.85)"
+      # ...
+
+  # ── 棒グラフ：カラム直接 GROUP BY ─────────────────────────────
+  - title: Top 10 Countries by Invoices
+    type: bar
+    entity: invoice
+    valueAggregate: count
+    groupExpression: BillingCountry   # カラム名をそのまま指定
+    orderBy: value
+    orderDir: desc
+    limit: 10
+    colorBg: "rgba(16, 185, 129, 0.7)"
+    colorBorder: "rgba(16, 185, 129, 1)"
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|:----:|------|
+| `title` | string | ✅ | グラフタイトル |
+| `titleI18n` | map | — | ロケール別タイトル |
+| `type` | string | ✅ | `bar` / `line` / `doughnut` / `pie` |
+| `entity` | string | ✅ | エンティティキー |
+| `valueAggregate` | string | ✅ | `count` / `sum` / `avg` |
+| `valueColumn` | string | ※ | `sum`/`avg` 時必須 |
+| `groupExpression` | string | ※ | GROUP BY 式（JOIN なし時必須） |
+| `labelJoinEntity` | string | — | FK JOIN で取得するラベルの元エンティティ |
+| `labelJoinKey` | string | — | 現テーブルの FK カラム名 |
+| `labelJoinDisplay` | string | — | JOIN 先の表示カラム名 |
+| `orderBy` | string | — | `label` / `value`（既定: `value`） |
+| `orderDir` | string | — | `asc` / `desc`（既定: `desc`） |
+| `limit` | int | — | 取得件数（既定: 10） |
+| `filter` | string | — | WHERE 句 |
+| `colorBg` | string | — | 塗りつぶし色（単色用 RGBA） |
+| `colorBorder` | string | — | 枠線色（単色用 RGBA） |
+| `colors` | list | — | `doughnut`/`pie` 用カラーリスト（RGBA） |
+
+#### 20.6.3 デフォルト設定一覧
+
+**統計カード 12 種**
+
+| カード | エンティティ | 集計 | アイコン | バッジ |
+|-------|------------|------|--------|--------|
+| Artists | artist | COUNT | 🎵 | badge-primary |
+| Albums | album | COUNT | 💿 | badge-secondary |
+| Tracks | track | COUNT | 🎸 | badge-accent |
+| Genres | genre | COUNT | 🎼 | badge-primary |
+| Media Types | mediatype | COUNT | 📀 | badge-secondary |
+| Playlists | playlist | COUNT | 📋 | badge-accent |
+| Customers | customer | COUNT | 👥 | badge-info |
+| Employees | employee | COUNT | 🧑‍💼 | badge-neutral |
+| Invoices | invoice | COUNT | 📄 | badge-warning |
+| Invoice Lines | invoiceline | COUNT | 🧾 | badge-ghost |
+| Total Revenue | invoice | SUM(Total) | 💰 | badge-success |
+| Avg Invoice | invoice | AVG(Total) | 📊 | badge-info |
+
+**グラフ 4 種**
+
+| グラフ | 種別 | エンティティ | 集計 | 備考 |
+|-------|------|------------|------|------|
+| Monthly Revenue | `line` | invoice | SUM(Total) | strftime 月別・24ヶ月 |
+| Tracks by Genre | `doughnut` | track | COUNT | Genre JOIN・Top 10 |
+| Top 10 Countries by Invoices | `bar` | invoice | COUNT | BillingCountry 別 |
+| Top 10 Artists by Albums | `bar` | album | COUNT | Artist JOIN |
+
+### 20.7 コントローラーの集計ロジック（`Controllers/DashboardController.cs`）
 
 #### 統計カード（`BuildStatsAsync`）
 
@@ -717,7 +855,7 @@ ORDER BY {orderBy} {orderDir} LIMIT {limit}
 
 クエリ結果は `System.Text.Json.JsonSerializer.Serialize` でラベル・値をそれぞれ JSON 配列化し、`LabelsJson` / `ValuesJson` として View に渡します。
 
-### 20.7 グラフ描画（`Views/Dashboard/Index.cshtml`）
+### 20.8 グラフ描画（`Views/Dashboard/Index.cshtml`）
 
 Chart.js 4.4.3 を CDN からロード（`@section Scripts` 内）。各グラフ定義について `<canvas id="chart-@i">` を生成し、インライン `<script>` で初期化します。
 
@@ -736,7 +874,7 @@ new Chart(ctx, {
 - 複数色グラフ（ドーナツ・円）: `colors` リストを `colorsJson` として渡す
 - Y 軸は 1000 以上を `k` 単位表示（例: `2.3k`）
 
-### 20.8 DI 登録（`Program.cs`）
+### 20.9 DI 登録（`Program.cs`）
 
 ```csharp
 builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>();
@@ -744,7 +882,7 @@ builder.Services.AddSingleton<IDashboardConfigProvider, DashboardConfigProvider>
 
 `DashboardConfigProvider` は起動時に `config/dashboard.yml` を一度だけ読み込む Singleton です。
 
-### 20.9 デフォルトルート変更
+### 20.10 デフォルトルート変更
 
 ```csharp
 // Program.cs（変更後）
@@ -754,6 +892,19 @@ app.MapControllerRoute(
 ```
 
 アプリの起動直後（`/`）にアクセスすると Dashboard が表示されます。
+
+### 20.11 動作検証結果
+
+| 検証項目 | 結果 |
+|---------|------|
+| `dotnet build` | ✅ エラー 0 件 |
+| 統計カード 12 種の表示 | ✅ COUNT / SUM / AVG 各集計が正しく表示される |
+| カードのジャンプリンク | ✅ クリックで対応エンティティ一覧へ遷移 |
+| 棒グラフ（Top Countries / Top Artists） | ✅ 正常表示 |
+| 折れ線グラフ（Monthly Revenue） | ✅ 月別 24 ヶ月分が時系列で表示される |
+| ドーナツグラフ（Tracks by Genre） | ✅ Genre JOIN・上位 10 件が円形表示される |
+| `entity` 未定義時のスキップ | ✅ エラーにならずカード・グラフをスキップ |
+| SQL エラー時のスキップ | ✅ 集計失敗分だけスキップし他は正常表示 |
 
 ---
 
