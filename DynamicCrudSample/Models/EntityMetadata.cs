@@ -224,12 +224,16 @@ public class EntityHooksDefinition
 public class EntityLinkDefinition
 {
     public string Label { get; set; } = default!;
+    /// <summary>多言語ラベル（entities.yml の labelI18n セクション）</summary>
+    public Dictionary<string, string>? LabelI18n { get; set; }
     public string TargetEntity { get; set; } = default!;
     // 静的クエリパラメータ（例: sort=Name）
     public Dictionary<string, string>? Query { get; set; }
     // 行ごとの動的フィルタ: targetQueryParam → sourceRowColumn
     // 例: { "CustomerId": "CustomerId" } → 行の CustomerId 値を ?CustomerId=xxx として付与
     public Dictionary<string, string>? Filter { get; set; }
+
+    public string GetLabel() => I18nText.Resolve(LabelI18n, Label);
 }
 
 public class EntityConfigRoot

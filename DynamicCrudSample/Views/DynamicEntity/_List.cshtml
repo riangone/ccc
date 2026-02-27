@@ -72,7 +72,7 @@
                         .Where(kv => kv.Value != null)
                         .ToDictionary(kv => kv.Key, kv => kv.Value!));
                     <a class="btn btn-sm btn-outline" href="@href">
-                        @link.Label
+                        @link.GetLabel()
                     </a>
                 }
             </div>
@@ -187,7 +187,7 @@
                                             .Where(kv => kv.Value != null)
                                             .ToDictionary(kv => kv.Key, kv => kv.Value!));
                                         <a class="btn btn-xs btn-secondary btn-outline" href="@rowLinkHref">
-                                            @rowLink.Label →
+                                            @rowLink.GetLabel() →
                                         </a>
                                     }
                                     <button class="btn btn-xs btn-outline"

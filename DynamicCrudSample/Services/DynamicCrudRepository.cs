@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using DynamicCrudSample.Models;
+using DynamicCrudSample.Services.Dialect;
 
 namespace DynamicCrudSample.Services;
 
@@ -39,14 +40,16 @@ public class DynamicCrudRepository : IDynamicCrudRepository
     private readonly IDbConnection _db;
     private readonly IEntityMetadataProvider _meta;
     private readonly ILogger<DynamicCrudRepository> _logger;
+    private readonly ISqlDialect _dialect;
     private static readonly Regex IdentifierRegex = new("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
     private static readonly Regex ExpressionRegex = new("^[A-Za-z0-9_\\.\\s,()\\+\\-*/%<>=!'|]+$", RegexOptions.Compiled);
     private static readonly HashSet<string> AllowedJoinTypes = new(StringComparer.OrdinalIgnoreCase) { "left", "inner", "right" };
 
-    public DynamicCrudRepository(IDbConnection db, IEntityMetadataProvider meta, ILogger<DynamicCrudRepository> logger)
+    public DynamicCrudRepository(IDbConnection db, IEntityMetadataProvider meta, ISqlDialect dialect, ILogger<DynamicCrudRepository> logger)
     {
         _db = db;
         _meta = meta;
+        _dialect = dialect;
         _logger = logger;
     }
 
@@ -102,14 +105,15 @@ public class DynamicCrudRepository : IDynamicCrudRepository
         }
 
         var effectivePageSize = fetchOneExtra ? pageSize.Value + 1 : pageSize.Value;
-        sql.Add(" LIMIT @PageSize");
-        param.Add("PageSize", effectivePageSize);
 
-        if (!keyset)
+        if (keyset)
         {
-            sql.Add(" OFFSET @Offset");
+            _dialect.AppendKeysetPagination(sql, param, effectivePageSize);
+        }
+        else
+        {
             var offset = (page - 1) * pageSize.Value;
-            param.Add("Offset", offset);
+            _dialect.AppendNumberedPagination(sql, param, effectivePageSize, offset, $"{meta.Table}.{meta.Key}");
         }
 
         var statement = string.Join(Environment.NewLine, sql);

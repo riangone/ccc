@@ -1,0 +1,48 @@
+entities:
+  invoiceline:
+    table: InvoiceLine
+    key: InvoiceLineId
+    displayName: Invoice Line
+    displayNameI18n:
+      en-US: Invoice Line
+      zh-CN: 发票明细
+      ja-JP: 請求明細
+    softDelete: false
+    isPublic: true
+    paging: { pageSize: 15, mode: numbered }
+    layout:
+      forms: { columns: 2, order: [InvoiceId, TrackId, UnitPrice, Quantity] }
+      filters: { columns: 2, order: [InvoiceId] }
+    joins:
+      - { type: left, table: Invoice, alias: inv, on: InvoiceLine.InvoiceId = inv.InvoiceId }
+      - { type: left, table: Track, alias: t, on: InvoiceLine.TrackId = t.TrackId }
+    columns:
+      InvoiceLineId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      InvoiceId: { type: int, label: Invoice, labelI18n: { en-US: Invoice, zh-CN: 发票, ja-JP: 請求書 }, sortable: true }
+      TrackId: { type: int, label: Track, labelI18n: { en-US: Track, zh-CN: 曲目, ja-JP: トラック }, sortable: true }
+      TrackName: { type: string, identity: true, label: Track, labelI18n: { en-US: Track, zh-CN: 曲目, ja-JP: トラック }, expression: t.Name, searchable: true, sortable: true }
+      UnitPrice: { type: decimal, label: Unit Price, labelI18n: { en-US: Unit Price, zh-CN: 单价, ja-JP: 単価 }, searchable: false, sortable: true }
+      Quantity: { type: int, label: Quantity, labelI18n: { en-US: Quantity, zh-CN: 数量, ja-JP: 数量 }, searchable: false, sortable: true }
+    forms:
+      InvoiceId:
+        type: int
+        label: Invoice
+        labelI18n: { en-US: Invoice, zh-CN: 发票, ja-JP: 請求書 }
+        editable: true
+        foreignKey: { entity: invoice, displayColumn: InvoiceId }
+      TrackId:
+        type: int
+        label: Track
+        labelI18n: { en-US: Track, zh-CN: 曲目, ja-JP: トラック }
+        editable: true
+        foreignKey: { entity: track, displayColumn: Name }
+      UnitPrice: { type: decimal, label: Unit Price, labelI18n: { en-US: Unit Price, zh-CN: 单价, ja-JP: 単価 }, editable: true }
+      Quantity: { type: int, label: Quantity, labelI18n: { en-US: Quantity, zh-CN: 数量, ja-JP: 数量 }, editable: true }
+    filters:
+      InvoiceId:
+        type: dropdown
+        label: Invoice
+        labelI18n: { en-US: Invoice, zh-CN: 发票, ja-JP: 請求書 }
+        expression: InvoiceLine.InvoiceId
+        foreignKey: { entity: invoice, displayColumn: InvoiceId }
+      UnitPrice: { type: range, label: Unit Price Range, labelI18n: { en-US: Unit Price Range, zh-CN: 单价范围, ja-JP: 単価範囲 }, expression: InvoiceLine.UnitPrice }

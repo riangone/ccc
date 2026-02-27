@@ -193,7 +193,7 @@ public class DynamicEntityController : Controller
         if (errors.Any())
         {
             var fkData = await LoadForeignKeyDataForm(meta);
-            var vm = new DynamicFormViewModel(entity, meta, null, fkData, errors, mode);
+            var vm = new DynamicFormViewModel(entity, meta, null, fkData, errors, mode, SubmittedValues: form);
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
@@ -210,7 +210,7 @@ public class DynamicEntityController : Controller
         {
             errors["__hook"] = beforeHookResult.CancelMessage ?? "前処理によりキャンセルされました。";
             var fkData = await LoadForeignKeyDataForm(meta);
-            var vm = new DynamicFormViewModel(entity, meta, null, fkData, errors, mode);
+            var vm = new DynamicFormViewModel(entity, meta, null, fkData, errors, mode, SubmittedValues: form);
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
@@ -295,7 +295,7 @@ public class DynamicEntityController : Controller
         {
             var item = await _repo.GetByIdAsync(entity, id);
             var fkData = await LoadForeignKeyDataForm(meta);
-            var vm = new DynamicFormViewModel(entity, meta, item, fkData, errors, mode);
+            var vm = new DynamicFormViewModel(entity, meta, item, fkData, errors, mode, SubmittedValues: form);
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
@@ -314,7 +314,7 @@ public class DynamicEntityController : Controller
             errors["__hook"] = beforeHookResult.CancelMessage ?? "前処理によりキャンセルされました。";
             var item = await _repo.GetByIdAsync(entity, id);
             var fkData = await LoadForeignKeyDataForm(meta);
-            var vm = new DynamicFormViewModel(entity, meta, item, fkData, errors, mode);
+            var vm = new DynamicFormViewModel(entity, meta, item, fkData, errors, mode, SubmittedValues: form);
             return isPageMode ? View("FormPage", vm) : PartialView("_Form", vm);
         }
 
@@ -748,7 +748,12 @@ public record DynamicFormViewModel(
     Dictionary<string, IEnumerable<dynamic>> ForeignKeyData,
     Dictionary<string, string> Errors,
     string Mode = "modal",
-    IReadOnlyList<BreadcrumbItem>? BreadcrumbChain = null);
+    IReadOnlyList<BreadcrumbItem>? BreadcrumbChain = null,
+    /// <summary>
+    /// バリデーション/フックエラー時に渡す送信値。
+    /// フォーム再描画時にフィールドの値を保持するために使用します。
+    /// </summary>
+    Dictionary<string, string?>? SubmittedValues = null);
 
 public record PickerViewModel(
     string Entity,
@@ -761,3 +766,11 @@ public record PickerViewModel(
     int Page,
     int PageSize,
     bool HasMore);
+
+public record DynamicFormFieldViewModel(
+    string FieldName,
+    FormDefinition Def,
+    object? Value,
+    string Label,
+    string? Error,
+    Dictionary<string, IEnumerable<dynamic>> ForeignKeyData);

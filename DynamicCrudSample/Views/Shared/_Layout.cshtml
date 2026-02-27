@@ -257,9 +257,29 @@
         });
 
         /**
-         * フォームの submit イベントをキャプチャフェーズで監視し、
+         * HTMX の hx-confirm 属性をカスタム DaisyUI ダイアログで処理します。
+         * Delete ボタンや hx-confirm 付きフォームで使用されます。
+         * evt.detail.issueRequest(true) を呼ぶことで確認後にリクエストを発行します。
+         */
+        document.body.addEventListener('htmx:confirm', function (evt) {
+            var msg = evt.detail.question;
+            if (!msg) {
+                // hx-confirm="" の場合は確認なしでリクエストを発行
+                evt.preventDefault();
+                evt.detail.issueRequest(true);
+                return;
+            }
+            evt.preventDefault();
+            showConfirmDialog(msg, function () {
+                evt.detail.issueRequest(true);
+            });
+        });
+
+        /**
+         * ページモード（通常 POST フォーム）の submit イベントを監視し、
          * data-confirm-msg 属性がある場合に確認ダイアログを挟みます。
-         * HTMX フォームにも対応（requestSubmit() で再送することで HTMX が処理します）。
+         * HTMX フォームは hx-confirm + htmx:confirm で処理されるため、
+         * data-confirm-msg を持つ非 HTMX フォームのみが対象です。
          */
         document.addEventListener('submit', function (evt) {
             var form = evt.target;
@@ -267,7 +287,6 @@
             if (!msg || msg.length === 0) return;  // 確認不要
 
             if (form.dataset.skipConfirm === '1') {
-                // 2 回目（確認済み）は通過させる
                 delete form.dataset.skipConfirm;
                 return;
             }
@@ -275,14 +294,13 @@
             evt.preventDefault();
             showConfirmDialog(msg, function () {
                 form.dataset.skipConfirm = '1';
-                // requestSubmit() で HTMX を含む全 submit リスナーに再通知
                 if (typeof form.requestSubmit === 'function') {
                     form.requestSubmit();
                 } else {
                     form.submit();
                 }
             });
-        }, true /* capture: HTMX より先に処理 */);
+        }, true /* capture */);
     </script>
     <script>
         // エンティティ選択ピッカー共通ロジック

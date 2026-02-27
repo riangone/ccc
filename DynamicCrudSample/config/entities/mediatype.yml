@@ -1,0 +1,28 @@
+entities:
+  mediatype:
+    table: MediaType
+    key: MediaTypeId
+    displayName: Media Type
+    displayNameI18n:
+      en-US: Media Type
+      zh-CN: 媒体类型
+      ja-JP: メディアタイプ
+    softDelete: false
+    isPublic: true
+    paging: { pageSize: 10, mode: numbered }
+    layout:
+      forms: { columns: 1, order: [Name] }
+      filters: { columns: 1 }
+    columns:
+      MediaTypeId: { type: int, identity: true, label: ID, labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }, searchable: false, sortable: true }
+      Name: { type: string, label: Name, labelI18n: { en-US: Name, zh-CN: 名称, ja-JP: 名前 }, searchable: true, sortable: true }
+    forms:
+      Name: { type: string, label: Name, labelI18n: { en-US: Name, zh-CN: 名称, ja-JP: 名前 }, editable: true }
+    filters: {}
+    links:
+      tracks:
+        label: Tracks
+        labelI18n: { en-US: Tracks, zh-CN: 曲目, ja-JP: トラック }
+        targetEntity: track
+        filter:
+          MediaTypeId: MediaTypeId

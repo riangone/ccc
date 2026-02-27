@@ -7,9 +7,11 @@ using System.Globalization;
 using DynamicCrudSample.Data;
 using DynamicCrudSample.Services;
 using DynamicCrudSample.Services.Auth;
+using DynamicCrudSample.Services.Dialect;
 using DynamicCrudSample.Services.Hooks;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 using Serilog;
 
@@ -42,11 +44,31 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddSingleton<IEntityMetadataProvider, EntityMetadataProvider>();
-builder.Services.AddScoped<IDbConnection>(_ =>
+
+// ===== データベースプロバイダー設定 =====
+// appsettings.json の "DatabaseProvider" で "sqlite"（既定）または "sqlserver" を指定してください。
+var dbProvider = (builder.Configuration["DatabaseProvider"] ?? "sqlite").ToLowerInvariant();
+
+if (dbProvider == "sqlserver")
 {
-    var cs = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=chinook.db";
-    return new SqliteConnection(cs);
-});
+    builder.Services.AddSingleton<ISqlDialect, SqlServerDialect>();
+    builder.Services.AddScoped<IDbConnection>(_ =>
+    {
+        var cs = builder.Configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("DefaultConnection is required for SQL Server provider.");
+        return new SqlConnection(cs);
+    });
+}
+else
+{
+    builder.Services.AddSingleton<ISqlDialect, SqliteDialect>();
+    builder.Services.AddScoped<IDbConnection>(_ =>
+    {
+        var cs = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=chinook.db";
+        return new SqliteConnection(cs);
+    });
+}
+
 builder.Services.AddSingleton<IValueConverter, ValueConverter>();
 builder.Services.AddScoped<IDynamicCrudRepository, DynamicCrudRepository>();
 builder.Services.AddScoped<IUserAuthService, UserAuthService>();

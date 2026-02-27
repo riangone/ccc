@@ -20,27 +20,25 @@ public class EntityMetadataProvider : IEntityMetadataProvider
 {
     private readonly Dictionary<string, EntityDefinition> _entities;
 
-    public EntityMetadataProvider(IWebHostEnvironment env)
+    public EntityMetadataProvider(IWebHostEnvironment env, IConfiguration configuration)
     {
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
             .Build();
         _entities = new Dictionary<string, EntityDefinition>(StringComparer.OrdinalIgnoreCase);
 
-        var dir = Path.Combine(env.ContentRootPath, "config", "entities");
-        if (Directory.Exists(dir))
+        var provider = (configuration["DatabaseProvider"] ?? "sqlite").ToLowerInvariant();
+        var defaultDir = Path.Combine(env.ContentRootPath, "config", "entities");
+
+        // プロバイダー固有ディレクトリを先に読み込み（例: entities-sqlserver/）
+        if (provider != "sqlite")
         {
-            var files = Directory.GetFiles(dir, "*.yml").OrderBy(x => x).ToList();
-            foreach (var file in files)
-            {
-                var yaml = File.ReadAllText(file);
-                var root = deserializer.Deserialize<EntityConfigRoot>(yaml);
-                foreach (var entity in root.Entities)
-                {
-                    _entities[entity.Key] = entity.Value;
-                }
-            }
+            var providerDir = Path.Combine(env.ContentRootPath, "config", $"entities-{provider}");
+            LoadDirectory(deserializer, providerDir, skipExisting: false);
         }
+
+        // デフォルト entities/ ディレクトリで不足エンティティを補完します
+        LoadDirectory(deserializer, defaultDir, skipExisting: true);
 
         if (_entities.Count == 0)
         {
@@ -55,6 +53,27 @@ public class EntityMetadataProvider : IEntityMetadataProvider
             foreach (var entity in root.Entities)
             {
                 _entities[entity.Key] = entity.Value;
+            }
+        }
+    }
+
+    private void LoadDirectory(IDeserializer deserializer, string dir, bool skipExisting)
+    {
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.GetFiles(dir, "*.yml").OrderBy(x => x))
+        {
+            var yaml = File.ReadAllText(file);
+            var root = deserializer.Deserialize<EntityConfigRoot>(yaml);
+            foreach (var entity in root.Entities)
+            {
+                if (!skipExisting || !_entities.ContainsKey(entity.Key))
+                {
+                    _entities[entity.Key] = entity.Value;
+                }
             }
         }
     }

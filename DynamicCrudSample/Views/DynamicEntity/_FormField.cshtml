@@ -1,0 +1,176 @@
+@* ファイル概要: 単一フォームフィールドを型に応じてレンダリングするパーシャルです。
+   _Form.cshtml の page/modal 両モードから共通利用されます。 *@
+@model DynamicCrudSample.Controllers.DynamicFormFieldViewModel
+@{
+    var name = Model.FieldName;
+    var def = Model.Def;
+    var value = Model.Value;
+    var label = Model.Label;
+    var error = Model.Error;
+}
+
+<div>
+    <label class="label"><span class="label-text">@label</span></label>
+
+    @if (!def.Editable)
+    {
+        <input type="text" name="@name" value="@(value ?? "")" class="input input-bordered w-full" readonly disabled />
+    }
+    else if (def.ForeignKey != null && def.ForeignKey.Picker)
+    {
+        @* 単一選択ピッカー *@
+        var fkId = value?.ToString() ?? "";
+        var fkLabel = fkId;
+        if (!string.IsNullOrEmpty(fkId) && Model.ForeignKeyData.TryGetValue(name, out var fkPickItems))
+        {
+            foreach (var fkItem in fkPickItems)
+            {
+                var d = (IDictionary<string, object>)fkItem;
+                if (d.TryGetValue("Id", out var rawId) && rawId?.ToString() == fkId)
+                {
+                    fkLabel = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? fkId : fkId;
+                    break;
+                }
+            }
+        }
+        <div class="flex gap-2 items-center">
+            <input type="hidden" name="@name" id="picker-value-@name" value="@fkId" />
+            <input type="text" id="picker-display-@name" class="input input-bordered flex-1"
+                   readonly placeholder="Browse で選択..." value="@fkLabel" />
+            <button type="button" class="btn btn-outline btn-sm"
+                    data-picker-field="@name"
+                    data-picker-entity="@def.ForeignKey.Entity"
+                    data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                    data-picker-multi="false"
+                    onclick="openEntityPicker(this)">
+                Browse...
+            </button>
+            @if (!string.IsNullOrEmpty(fkId))
+            {
+                <button type="button" class="btn btn-ghost btn-sm"
+                        onclick="clearPickerValue('@name')">✕</button>
+            }
+        </div>
+    }
+    else if (def.ForeignKey != null && def.ForeignKey.MultiPicker)
+    {
+        @* 複数選択ピッカー *@
+        var rawIds = (value?.ToString() ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var chipLabels = new Dictionary<string, string>();
+        if (Model.ForeignKeyData.TryGetValue(name, out var fkMultiItems))
+        {
+            foreach (var fkItem in fkMultiItems)
+            {
+                var d = (IDictionary<string, object>)fkItem;
+                if (d.TryGetValue("Id", out var rawId) && rawId != null)
+                {
+                    var sid = rawId.ToString()!;
+                    var lbl = d.TryGetValue(def.ForeignKey.DisplayColumn, out var lv) ? lv?.ToString() ?? sid : sid;
+                    chipLabels[sid] = lbl;
+                }
+            }
+        }
+        <div>
+            <div id="picker-chips-@name" class="flex flex-wrap gap-1 mb-2 min-h-8">
+                @foreach (var pid in rawIds)
+                {
+                    var chipLbl = chipLabels.TryGetValue(pid, out var cl) ? cl : pid;
+                    <div class="badge badge-neutral gap-1" data-id="@pid">
+                        @chipLbl
+                        <button type="button"
+                                onclick="removePickerChip('@name', '@pid', this.parentElement)">✕</button>
+                    </div>
+                }
+            </div>
+            <input type="hidden" name="@name" id="picker-value-@name" value="@(value?.ToString() ?? "")" />
+            <button type="button" class="btn btn-outline btn-sm"
+                    data-picker-field="@name"
+                    data-picker-entity="@def.ForeignKey.Entity"
+                    data-picker-display-col="@def.ForeignKey.DisplayColumn"
+                    data-picker-multi="true"
+                    onclick="openEntityPicker(this)">
+                + Browse...
+            </button>
+        </div>
+    }
+    else if (def.ForeignKey != null && Model.ForeignKeyData.TryGetValue(name, out var fkItems))
+    {
+        var selVal = value?.ToString();
+        <select name="@name" class="select select-bordered w-full">
+            <option value="">-- select --</option>
+            @foreach (var fk in fkItems)
+            {
+                var dict = (IDictionary<string, object>)fk;
+                var fkIdVal = dict["Id"];
+                var fkText = dict[def.ForeignKey.DisplayColumn];
+                bool selected = selVal != null && selVal == fkIdVal?.ToString();
+                <option value="@fkIdVal" selected="@(selected ? "selected" : null)">@fkText</option>
+            }
+        </select>
+    }
+    else if (def.Type.Equals("bool", StringComparison.OrdinalIgnoreCase))
+    {
+        var boolStr = value?.ToString() ?? "";
+        bool checkedValue = value is bool b ? b : boolStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+        <input type="checkbox" name="@name" class="checkbox" checked="@(checkedValue ? "checked" : null)" />
+    }
+    else if (def.Options != null && def.Options.Any() && !def.Type.Equals("radio", StringComparison.OrdinalIgnoreCase))
+    {
+        var current = value?.ToString();
+        <select name="@name" class="select select-bordered w-full">
+            <option value="">-- select --</option>
+            @foreach (var opt in def.Options)
+            {
+                <option value="@opt" selected="@(current == opt ? "selected" : null)">@opt</option>
+            }
+        </select>
+    }
+    else if (def.Type.Equals("int", StringComparison.OrdinalIgnoreCase))
+    {
+        <input type="number" name="@name" value="@(value ?? "")" class="input input-bordered w-full" />
+    }
+    else if (def.Type.Equals("decimal", StringComparison.OrdinalIgnoreCase) || def.Type.Equals("double", StringComparison.OrdinalIgnoreCase))
+    {
+        <input type="number" step="0.01" name="@name" value="@(value ?? "")" class="input input-bordered w-full" />
+    }
+    else if (def.Type.Equals("datetime", StringComparison.OrdinalIgnoreCase))
+    {
+        string v = value is DateTime dtv ? dtv.ToString("yyyy-MM-dd") : value?.ToString() ?? "";
+        <input type="date" name="@name" value="@v" class="input input-bordered w-full" />
+    }
+    else if (def.Type.Equals("date", StringComparison.OrdinalIgnoreCase))
+    {
+        string v = value is DateTime dtd ? dtd.ToString("yyyy-MM-dd") : value?.ToString() ?? "";
+        <input type="date" name="@name" value="@v" class="input input-bordered w-full" />
+    }
+    else if (def.Type.Equals("email", StringComparison.OrdinalIgnoreCase))
+    {
+        <input type="email" name="@name" value="@(value ?? "")" class="input input-bordered w-full" />
+    }
+    else if (def.Type.Equals("textarea", StringComparison.OrdinalIgnoreCase))
+    {
+        <textarea name="@name" class="textarea textarea-bordered w-full" rows="4">@(value ?? "")</textarea>
+    }
+    else if (def.Type.Equals("radio", StringComparison.OrdinalIgnoreCase) && def.Options != null)
+    {
+        var current = value?.ToString();
+        <div class="flex gap-4 flex-wrap">
+            @foreach (var opt in def.Options)
+            {
+                <label class="label cursor-pointer gap-2">
+                    <input type="radio" name="@name" value="@opt" class="radio radio-sm" checked="@(current == opt ? "checked" : null)" />
+                    <span class="label-text">@opt</span>
+                </label>
+            }
+        </div>
+    }
+    else
+    {
+        <input type="text" name="@name" value="@(value ?? "")" class="input input-bordered w-full" />
+    }
+
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <span class="text-error text-sm">@error</span>
+    }
+</div>

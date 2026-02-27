@@ -1,0 +1,128 @@
+entities:
+  customer:
+    table: Customer
+    key: CustomerId
+    displayName: Customer
+    displayNameI18n:
+      en-US: Customer
+      zh-CN: 客户
+      ja-JP: 顧客
+    softDelete: false
+    paging:
+      pageSize: 10
+      mode: numbered
+    layout:
+      forms:
+        columns: 2
+        order: [FirstName, LastName, Email, Country, SupportRepId]
+      filters:
+        columns: 3
+        order: [Country, SupportRepId]
+    joins:
+      - type: left
+        table: Employee
+        alias: e
+        on: Customer.SupportRepId = e.EmployeeId
+    columns:
+      CustomerId:
+        type: int
+        identity: true
+        label: ID
+        labelI18n: { en-US: ID, zh-CN: 编号, ja-JP: ID }
+        searchable: false
+        sortable: true
+      FirstName:
+        type: string
+        required: true
+        label: First Name
+        labelI18n: { en-US: First Name, zh-CN: 名, ja-JP: 名 }
+        searchable: true
+        sortable: true
+      LastName:
+        type: string
+        required: true
+        label: Last Name
+        labelI18n: { en-US: Last Name, zh-CN: 姓, ja-JP: 姓 }
+        searchable: true
+        sortable: true
+      Email:
+        type: email
+        required: true
+        label: Email
+        labelI18n: { en-US: Email, zh-CN: 邮箱, ja-JP: メール }
+        searchable: true
+        sortable: true
+      Country:
+        type: string
+        label: Country
+        labelI18n: { en-US: Country, zh-CN: 国家, ja-JP: 国 }
+        searchable: true
+        sortable: true
+      SupportRepId:
+        type: int
+        label: Support Rep
+        labelI18n: { en-US: Support Rep, zh-CN: 支持代表, ja-JP: サポート担当 }
+        sortable: true
+      SupportRepName:
+        type: string
+        identity: true
+        label: Support Rep
+        labelI18n: { en-US: Support Rep, zh-CN: 支持代表, ja-JP: サポート担当 }
+        expression: "e.LastName + ', ' + e.FirstName"
+        searchable: true
+        sortable: true
+    forms:
+      FirstName:
+        type: string
+        required: true
+        label: First Name
+        labelI18n: { en-US: First Name, zh-CN: 名, ja-JP: 名 }
+        editable: true
+      LastName:
+        type: string
+        required: true
+        label: Last Name
+        labelI18n: { en-US: Last Name, zh-CN: 姓, ja-JP: 姓 }
+        editable: true
+      Email:
+        type: email
+        required: true
+        label: Email
+        labelI18n: { en-US: Email, zh-CN: 邮箱, ja-JP: メール }
+        editable: true
+      Country:
+        type: string
+        label: Country
+        labelI18n: { en-US: Country, zh-CN: 国家, ja-JP: 国 }
+        editable: true
+      SupportRepId:
+        type: int
+        label: Support Rep
+        labelI18n: { en-US: Support Rep, zh-CN: 支持代表, ja-JP: サポート担当 }
+        editable: true
+        foreignKey:
+          entity: employee
+          displayColumn: LastName
+    filters:
+      Country:
+        type: multi-select
+        label: Country
+        labelI18n: { en-US: Country, zh-CN: 国家, ja-JP: 国 }
+        options: [USA, Canada, Brazil, France, Germany]
+      SupportRepId:
+        type: dropdown
+        label: Support Rep
+        labelI18n: { en-US: Support Rep, zh-CN: 支持代表, ja-JP: サポート担当 }
+        expression: Customer.SupportRepId
+        foreignKey:
+          entity: employee
+          displayColumn: LastName
+    links:
+      employees:
+        label: Support Reps
+        targetEntity: employee
+      invoices:
+        label: Invoices
+        targetEntity: invoice
+        filter:
+          CustomerId: CustomerId
